@@ -437,6 +437,39 @@ export function startText(start, lang = 'en') {
   return lang === 'he' ? `ב-${start?.at ?? DEFAULT_AUTO_START.at}` : `at ${start?.at ?? DEFAULT_AUTO_START.at}`;
 }
 
+/**
+ * When automatic Shabbat next switches the mode on: the coming Friday at `at`, or `hoursBefore` before the upcoming
+ * Shabbat candle lighting. Null for chag (its date is the calendar's), or when the sensor cannot be read.
+ */
+export function nextAutoStart(mode, start, states, cal, now = new Date()) {
+  if (mode !== 'שבת') return null;
+  if (start?.hoursBefore != null) {
+    const sensor = cal?.shabbatCandleLighting || cal?.candleLighting;
+    const lighting = new Date(states?.[sensor]?.state ?? NaN);
+    if (isNaN(lighting)) return null;
+    return new Date(lighting.getTime() - Number(start.hoursBefore) * 3600000);
+  }
+  const at = parseTimeInput(start?.at ?? DEFAULT_AUTO_START.at) ?? 720;
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ((5 - now.getDay() + 7) % 7), Math.floor(at / 60), at % 60);
+  if (d <= now) d.setDate(d.getDate() + 7);
+  return d;
+}
+
+/**
+ * Friday ranges of Shabbat schedules that begin before the mode comes on at `startDate`: their automations are still
+ * off when the range begins, so they do not run it. `[{entityId, start}]`, start in minutes.
+ */
+export function startsBeforeMode(weeks, startDate) {
+  if (!startDate) return [];
+  const at = startDate.getHours() * 60 + startDate.getMinutes();
+  const early = [];
+  for (const [entityId, week] of Object.entries(weeks || {})) {
+    const first = (week?.days?.friday || []).filter((b) => b.start < at).sort((a, b) => a.start - b.start)[0];
+    if (first) early.push({ entityId, start: first.start });
+  }
+  return early;
+}
+
 /** On a Friday, only when Shabbat is joined by a chag; any other erev (Jewish Calendar's sensor) is erev chag. */
 function erevChagTemplate(cal) {
   return `{% set cl = as_datetime(states('${cal.candleLighting}'), none) %}{% set hv = as_datetime(states('${cal.havdalah}'), none) %}` +
@@ -1215,6 +1248,16 @@ export const STRINGS = {
     autoHint: (mode) => (mode === 'שבת'
       ? 'מדליק את מצב השבת בשישי, לפני התזמונים, ומכבה אחרי צאת השבת כשכל תזמוני השבת הסתיימו.'
       : 'מדליק את מצב החג בערב חג, לפני התזמונים, ומכבה אחרי צאת החג כשכל תזמוני החג הסתיימו. חג שחל בשבת מכוסה במצב שבת.'),
+    runBy: 'איך המצב מופעל',
+    runManual: 'ידני',
+    runAuto: 'אוטומטי',
+    manualHint: (m) => `רק אתם מדליקים ומכבים את מצב ה${m}. שום דבר לא ידליק אותו לבד.`,
+    nextOn: (when) => `יידלק ${when}`,
+    offAsk: (m, when) => `מצב ה${m} אוטומטי, והוא יידלק שוב ${when}.`,
+    nextErev: { שבת: 'בשישי הבא', חג: 'בערב החג הבא' },
+    offManual: 'לכבות ולעבור לידני',
+    offForNow: 'לכבות רק עכשיו',
+    startsEarly: (name, time, start) => `${name} מתחיל בשישי ב-${time}, לפני שמצב השבת נדלק (${start}), ולכן באותו טווח הוא לא יפעל.`,
     saved: 'התזמון נשמר',
     createdPartly: (e) => `התזמון והאוטומציה נוצרו, אבל השלב האחרון נכשל: ${e}. פתחו את התזמון כדי לבדוק את הסוג שלו.`,
     created: 'התזמון נוצר',
@@ -1365,6 +1408,16 @@ export const STRINGS = {
     autoHint: (mode) => (mode === 'שבת'
       ? 'Turns Shabbat mode on on Friday, before its schedules, and off after Shabbat ends once every Shabbat schedule has finished.'
       : 'Turns chag (Jewish holiday) mode on on erev chag, before its schedules, and off after the chag ends once every chag schedule has finished. A chag on Shabbat is covered by Shabbat mode.'),
+    runBy: 'How the mode is switched',
+    runManual: 'Manual',
+    runAuto: 'Automatic',
+    manualHint: (m) => `Only you switch ${m} mode on and off. Nothing switches it on by itself.`,
+    nextOn: (when) => `Comes on ${when}`,
+    offAsk: (m, when) => `${m} mode is automatic, and comes on again ${when}.`,
+    nextErev: { שבת: 'next Friday', חג: 'on the next erev chag' },
+    offManual: 'Switch off and go manual',
+    offForNow: 'Switch off for now',
+    startsEarly: (name, time, start) => `${name} starts on Friday at ${time}, before Shabbat mode comes on (${start}), so it will not run that range.`,
     saved: 'Schedule saved',
     createdPartly: (e) => `The schedule and its automation were created, but the last step failed: ${e}. Open the schedule to check its type.`,
     created: 'Schedule created',
@@ -2872,10 +2925,16 @@ class ScheduleHelperShabbatCard extends CardBase {
         .map((e) => ({ ...e, state: this._stateOf(e.entity_id) })),
       schedules: modeMembers(states, reg, m, 'schedule'),
     }]));
+    const schedIds = [...new Set(modes.flatMap((m) => members[m].schedules.map((e) => e.entity_id)))];
+    const weeksSig = modes.flatMap((m) => members[m].schedules.map((e) => `${e.entity_id}@${e.last_updated}`)).join('|');
+    if (weeksSig !== this._weeksSig) {
+      this._weeksSig = weeksSig;
+      readSchedules(this._h, schedIds).then((w) => { this._weeks = w; this._render(true); }).catch(() => {});
+    }
     const calIds = [cal.issur, cal.candleLighting, cal.havdalah, cal.date, cal.parasha, cal.holiday, ...Object.values(cal.hebcal)].filter(Boolean);
     const sig = JSON.stringify([
       this._lang, this._isAdmin, this._config, new Date().toDateString(), new Date().getHours(), this._busy,
-      calIds.map((id) => states[id]?.state), this._labels?.length, this._auto, this._start,
+      calIds.map((id) => states[id]?.state), this._labels?.length, this._auto, this._start, this._offAsk,
       this._startEdit && [this._startEdit.mode, this._startEdit.kind, this._startEdit.error], // not what is typed
       Object.values(this._auto || {}).map((a) => a && states[a.entityId]?.state),
       modes.map((m) => [members[m].automations.map((e) => [e.entity_id, e.state]), members[m].schedules.map((e) => [e.entity_id, e.last_updated])]),
@@ -2927,6 +2986,7 @@ class ScheduleHelperShabbatCard extends CardBase {
         <div class="grow"><div class="mode-title">${esc(t.modeTitle(name))}</div><div class="muted small">${esc(status)}</div></div>
         ${switchHtml({ checked: state === 'on', partial: state === 'partial', disabled: state === 'empty' || busy, label: t.modeSwitch(name), attrs: `data-master="${esc(mode)}" id="master-${esc(mode)}"` })}
       </div>
+      ${this._offAsk === mode ? this._offAskHtml(mode, cal) : ''}
       ${automations.length ? `<div class="members">${automations.map((a) => `
         <div class="member"><span class="grow">${esc(entityName(a))}</span>
           ${switchHtml({ checked: a.state === 'on', label: entityName(a), attrs: `data-auto="${esc(a.entity_id)}" id="member-${esc(a.entity_id)}"` })}</div>`).join('')}</div>` : ''}
@@ -2939,6 +2999,19 @@ class ScheduleHelperShabbatCard extends CardBase {
       ${this._autoHtml(mode, cal)}
       ${this._isAdmin ? `<div class="mode-foot"><button class="btn" data-act="members" data-mode="${esc(mode)}">${esc(t.chooseAutomations)}</button></div>` : ''}
     </section>`;
+  }
+
+  /** Switching off a mode that is automatic: only until it comes on again, or for good (manual)? */
+  _offAskHtml(mode, cal) {
+    const t = this._t;
+    const next = nextAutoStart(mode, this._currentStart(mode), this._hass.states, cal);
+    const m = esc(mode);
+    return `<div class="panel off-ask" role="group" aria-label="${esc(t.modeSwitch(t.modeName[mode]))}">
+      <div>${esc(t.offAsk(t.modeName[mode], next ? formatWhen(next, new Date(), this._lang) : t.nextErev[mode]))}</div>
+      <div class="actions"><button class="btn" data-act="offCancel">${esc(t.cancel)}</button>
+        <button class="btn" data-act="offForNow" data-mode="${m}">${esc(t.offForNow)}</button>
+        ${this._isAdmin ? `<button class="btn primary" data-act="offManual" data-mode="${m}">${esc(t.offManual)}</button>` : ''}</div>
+    </div>`;
   }
 
   /** The start of a mode: what its automation says, or what will be used when it is created. */
@@ -2956,17 +3029,26 @@ class ScheduleHelperShabbatCard extends CardBase {
     const start = this._currentStart(mode);
     const canEditStart = this._isAdmin && this._autoLoaded && !unavailable && (!auto || (auto.ours && parseAutoStart(auto.config)));
     const hint = unavailable ? (mode === 'שבת' ? t.errNoCalendar : t.errNoJewishCalendar)
-      : auto && !auto.ours ? t.autoShabbatNotOurs : t.autoHint(mode);
+      : auto && !auto.ours ? t.autoShabbatNotOurs : on ? t.autoHint(mode) : t.manualHint(t.modeName[mode]);
+    const now = new Date();
+    const next = on ? nextAutoStart(mode, start, this._hass.states, cal, now) : null;
+    const weeks = Object.fromEntries(modeMembers(this._hass.states, this._registry(), mode, 'schedule')
+      .filter((e) => this._weeks?.[e.entity_id]).map((e) => [e.entity_id, this._weeks[e.entity_id]]));
+    const early = startsBeforeMode(weeks, next);
+    const radio = (value, label, checked) => `<label class="seg-opt"><input type="radio" name="automode-${esc(mode)}" value="${value}"
+      data-automode="${esc(mode)}" id="auto-${esc(mode)}-${value}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}><span>${esc(label)}</span></label>`;
     // Jewish Calendar is part of Home Assistant, but has to be added once; an admin can do it from here.
     const addCalendar = unavailable && this._isAdmin && !cal?.issur
       ? `<div class="small"><a class="link" href="${ADD_JEWISH_CALENDAR}" target="_top">${esc(t.addJewishCalendar)}</a></div>` : '';
     return `<div class="auto">
-      <div class="grow"><div>${esc(t.autoTitle[mode])}</div>
-        <div class="muted small">${esc(hint)}</div>
-        ${addCalendar}
-        ${canEditStart && this._startEdit?.mode !== mode ? `<div class="small start-line">${esc(t.startLabel)}: ${esc(startText(start, this._lang))} ·
-          <button class="link" data-act="startEdit" data-mode="${esc(mode)}">${esc(t.change)}</button></div>` : ''}</div>
-      ${switchHtml({ checked: on, disabled, label: t.autoTitle[mode], attrs: `data-automode="${esc(mode)}" id="auto-${esc(mode)}"` })}
+      <div class="seg" role="radiogroup" aria-label="${esc(t.runBy)}">${radio('manual', t.runManual, !on)}${radio('auto', t.runAuto, on)}</div>
+      <div class="muted small">${esc(hint)}</div>
+      ${addCalendar}
+      ${next ? `<div class="small next-line">${esc(t.nextOn(formatWhen(next, now, this._lang)))}</div>` : ''}
+      ${canEditStart && this._startEdit?.mode !== mode ? `<div class="small start-line">${esc(t.startLabel)}: ${esc(startText(start, this._lang))} ·
+        <button class="link" data-act="startEdit" data-mode="${esc(mode)}">${esc(t.change)}</button></div>` : ''}
+      ${early.map((e) => `<div class="warn small" role="note">${esc(t.startsEarly(entityName(this._hass.states[e.entityId]), hm(e.start),
+        formatWhen(next, now, this._lang)))}</div>`).join('')}
     </div>
     ${this._startEdit?.mode === mode ? this._startPanelHtml(mode, cal) : ''}`;
   }
@@ -3042,28 +3124,51 @@ class ScheduleHelperShabbatCard extends CardBase {
       this._startEdit = null;
       this._render(true);
     } else if (act === 'startSave') this._saveStart(el.dataset.mode);
+    else if (act === 'offCancel') {
+      this._offAsk = null;
+      this._render(true);
+    } else if (act === 'offForNow' || act === 'offManual') {
+      this._offAsk = null;
+      this._switchMode(el.dataset.mode, false, { manual: act === 'offManual' });
+    }
+  }
+
+  /** The mode's switch: every member on or off; `manual` also stops the automatic mode switching it on again. */
+  async _switchMode(mode, on, { manual = false } = {}) {
+    const ids = modeMembers(this._hass.states, this._registry(), mode)
+      .filter((m) => !isAutoAlias(m.attributes?.friendly_name)).map((m) => m.entity_id);
+    this._expect(ids, on); // before the busy redraw, so the switch stays where it was flipped to
+    this._busy = mode;
+    this._render(true);
+    await this._flip(ids, on, () => setModeEnabled(this._h, this._registry(), mode, on));
+    if (manual) await this._run(() => disableAuto(this._h, mode));
+    this._busy = null;
+    if (manual) await this._loadAuto();
+    this._render(true);
   }
 
   async _onChange(e) {
     const d = e.target.dataset || {};
     const on = e.target.checked;
     if (d.master) {
-      const ids = modeMembers(this._hass.states, this._registry(), d.master)
-        .filter((m) => !isAutoAlias(m.attributes?.friendly_name)).map((m) => m.entity_id);
-      this._expect(ids, on); // before the busy redraw, so the switch stays where it was flipped to
-      this._busy = d.master;
-      this._render(true);
-      await this._flip(ids, on, () => setModeEnabled(this._h, this._registry(), d.master, on));
-      this._busy = null;
-      this._render(true);
+      // Off while the automatic mode would switch it on again: ask which is meant, instead of being overruled later.
+      const auto = this._auto?.[d.master];
+      if (!on && auto && this._hass.states[auto.entityId]?.state === 'on') {
+        this._offAsk = d.master;
+        this._render(true); // the switch goes back to on until answered
+        return;
+      }
+      this._offAsk = null;
+      await this._switchMode(d.master, on);
     } else if (d.auto) {
       await this._flip([d.auto], on, () => setAutomationEnabled(this._h, d.auto, on));
       this._render(true);
     } else if (d.automode) {
       const mode = d.automode;
+      const auto = e.target.value === 'auto';
       this._busy = `auto-${mode}`;
       this._render(true);
-      await this._run(() => (on ? enableAuto(this._h, mode, { start: this._currentStart(mode) }) : disableAuto(this._h, mode)));
+      await this._run(() => (auto ? enableAuto(this._h, mode, { start: this._currentStart(mode) }) : disableAuto(this._h, mode)));
       this._busy = null;
       await this._loadAuto();
       this._loadLabels();
@@ -3177,7 +3282,19 @@ const SHABBAT_STYLE = `
   .member, .auto { display: flex; align-items: center; gap: 8px; min-height: 36px; }
   .sched { display: flex; align-items: center; gap: 8px; min-height: 26px; font-size: 14px; }
   .sched .grow { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .auto { margin-top: 8px; padding: 8px 10px 8px 12px; border-radius: 10px; background: var(--secondary-background-color, rgba(127,127,127,.08)); }
+  .auto { margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: var(--secondary-background-color, rgba(127,127,127,.08));
+    flex-direction: column; align-items: stretch; gap: 4px; }
+  .seg { display: inline-flex; align-self: flex-start; border: 1px solid var(--divider-color); border-radius: 999px; overflow: hidden; margin-bottom: 2px; }
+  .seg-opt { position: relative; cursor: pointer; }
+  .seg-opt input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+  .seg-opt span { display: block; padding: 6px 16px; font-size: 14px; }
+  .seg-opt input:checked + span { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+  .seg-opt input:focus-visible + span { outline: 2px solid var(--primary-color); outline-offset: -2px; }
+  .seg-opt input:disabled { cursor: default; }
+  .seg-opt input:disabled + span { opacity: .5; }
+  .next-line { color: var(--primary-text-color); font-weight: 500; }
+  .auto .warn { margin-top: 4px; }
+  .off-ask .actions { flex-wrap: wrap; }
   .start-line { margin-top: 4px; color: var(--secondary-text-color); }
   .start-panel { margin: 8px 0 0; }
   .start-panel .check { flex-wrap: wrap; }

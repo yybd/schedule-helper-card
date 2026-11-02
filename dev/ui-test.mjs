@@ -48,7 +48,7 @@ const CHECKS = [
     must([...S().querySelectorAll('.row')].some((r) => !r.dataset.id && r.textContent.includes('YAML')), 'the YAML schedule says so');
     must(!S().querySelector('.body .ic') && !B().querySelector('.body .ic'), 'no icons in the cards');
     must(B().querySelectorAll('.mode').length === 2, 'two modes');
-    must(B().querySelectorAll('[data-automode]').length === 2, 'automatic Shabbat and chag');
+    must(B().querySelectorAll('[data-automode][value=auto]').length === 2, 'automatic Shabbat and chag');
     must(B().querySelector('.cal-date').textContent.includes('טבת'), 'calendar');
   `],
   ['the card types from before 2.0 still render', '', `
@@ -193,23 +193,71 @@ const CHECKS = [
     type(B().getElementById('start-hb'), '3', 'hours');
     click(B().querySelector('[data-act=startSave]'), 'save start');
     await sleep(100);
-    toggle(B().querySelector('[data-automode="שבת"]'), true, 'switch on');
+    toggle(B().querySelector('[data-automode="שבת"][value=auto]'), true, 'switch on');
     await sleep(1200);
     const p = posts().find((c) => c.body.alias === 'Beit · מצב שבת אוטומטי');
     must(p && p.body.triggers[0].at.offset === '-03:00:00', 'offset: ' + JSON.stringify(p?.body.triggers[0]));
-    toggle(B().querySelector('[data-automode="שבת"]'), false, 'switch off');
+    toggle(B().querySelector('[data-automode="שבת"][value=manual]'), true, 'switch off');
     await sleep(600);
     const id = Object.keys(fake.states).find((k) => fake.states[k].attributes.friendly_name === 'Beit · מצב שבת אוטומטי');
     must(id && fake.states[id].state === 'off', 'disabled, still there');
     must(!fake.calls.some((c) => c.method === 'DELETE'), 'never deleted');
   `],
+  ['switching off an automatic mode asks: for now, or manual', '', `
+    toggle(B().querySelector('[data-automode="שבת"][value=auto]'), true, 'automatic Shabbat');
+    await sleep(1200);
+    must(B().querySelector('.next-line'), 'says when it comes on next');
+    const master = () => B().querySelector('[data-master="שבת"]');
+    const members = () => Object.values(fake.states).filter((e) => (fake.entities[e.entity_id]?.labels || []).includes('shbt')
+      && e.entity_id.startsWith('automation.') && e.attributes.friendly_name !== 'Beit · מצב שבת אוטומטי');
+    toggle(master(), true, 'mode on');
+    await sleep(600);
+    toggle(master(), false, 'mode off');
+    await sleep(200);
+    must(B().querySelector('.off-ask'), 'asks');
+    must(members().every((e) => e.state === 'on'), 'nothing switched yet');
+    click(B().querySelector('[data-act=offCancel]'), 'cancel');
+    await sleep(100);
+    must(!B().querySelector('.off-ask') && master().checked, 'cancelled, still on');
+    toggle(master(), false, 'mode off');
+    await sleep(100);
+    click(B().querySelector('[data-act=offForNow]'), 'for now');
+    await sleep(800);
+    must(members().every((e) => e.state === 'off'), 'members off');
+    must(B().querySelector('[data-automode="שבת"][value=auto]').checked, 'still automatic');
+    toggle(master(), true, 'mode on');
+    await sleep(600);
+    toggle(master(), false, 'mode off');
+    await sleep(100);
+    click(B().querySelector('[data-act=offManual]'), 'manual');
+    await sleep(1200);
+    must(members().every((e) => e.state === 'off'), 'members off');
+    must(B().querySelector('[data-automode="שבת"][value=manual]').checked, 'manual now');
+    toggle(master(), true, 'mode on');
+    await sleep(600);
+    toggle(master(), false, 'mode off, manual');
+    await sleep(800);
+    must(!B().querySelector('.off-ask'), 'manual: no question');
+    must(members().every((e) => e.state === 'off'), 'off at once');
+  `],
+  ['a Shabbat schedule that starts before the mode comes on is named', '', `
+    click(B().querySelector('[data-act=startEdit][data-mode="שבת"]'), 'change start');
+    type(B().getElementById('start-at'), '16:30', 'start');
+    click(B().querySelector('[data-act=startSave]'), 'save start');
+    await sleep(100);
+    toggle(B().querySelector('[data-automode="שבת"][value=auto]'), true, 'automatic Shabbat');
+    await sleep(1500);
+    const warns = [...B().querySelectorAll('.auto .warn')].map((w) => w.textContent);
+    must(warns.length === 2, 'two warnings: ' + JSON.stringify(warns));
+    must(warns.some((w) => w.includes('15:00')) && warns.some((w) => w.includes('16:00')), 'hot plate and living room');
+  `],
   ['automatic chag is created with the Jewish Calendar', '', `
-    toggle(B().querySelector('[data-automode="חג"]'), true, 'chag on');
+    toggle(B().querySelector('[data-automode="חג"][value=auto]'), true, 'chag on');
     await sleep(1200);
     const p = posts().find((c) => c.body.alias === 'Beit · מצב חג אוטומטי');
     must(p, 'created');
     must(p.body.triggers[1].entity_id[0].startsWith('binary_sensor.jewish_calendar_issur_melacha'), 'ends with issur melacha');
-    must(B().querySelector('[data-automode="חג"]').checked, 'shown on');
+    must(B().querySelector('[data-automode="חג"][value=auto]').checked, 'shown on');
   `],
   ['by default the schedules card shows Shabbat and chag only in a home that has their labels', '', `
     // This house has both labels: shown.
@@ -294,7 +342,7 @@ const CHECKS = [
     must(fake._schedules.find((s) => s.id === item.id).saturday[0].from === '09:00:00', 'their version kept');
   `],
   ['an automatic mode edited in HA shows its new start', '', `
-    toggle(B().querySelector('[data-automode="שבת"]'), true, 'automatic Shabbat');
+    toggle(B().querySelector('[data-automode="שבת"][value=auto]'), true, 'automatic Shabbat');
     await sleep(1500);
     const st = Object.values(fake.snapshot().states).find((e) => e.attributes?.friendly_name === 'Beit · מצב שבת אוטומטי');
     const cfg = (await fake.callWS({ type: 'automation/config', entity_id: st.entity_id })).config;

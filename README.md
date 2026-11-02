@@ -264,8 +264,12 @@ A mode is a Home Assistant **label**, named `שבת` or `חג`.
 - **Changing membership.** Use **Choose automations** on the card. Membership is stored in Home Assistant, so every
   device, and the Home Assistant UI itself, sees the same list.
 - **The mode switch.** It turns every member automation on or off together. The per-automation switches below it stay
-  available.
-- **Automatic Shabbat** (optional, one switch on the card). Creates one automation that:
+  available. Switching off in the middle of a range also turns that range's device off, the way the automation would
+  at the range's end; an automation the card cannot read that from is named, and its device is left as it is.
+- **Manual or automatic.** Each mode is run by hand (*Manual*: only you switch it, nothing switches it on by itself)
+  or *Automatic*. The card says when an automatic mode comes on next. Switching an automatic mode off asks whether
+  that is **for now** (it comes on again next Friday, or next erev chag) or for good (**manual**).
+- **Automatic Shabbat** (optional). Creates one automation that:
   1. turns the Shabbat mode on every **Friday at 12:00**, before typical Friday-afternoon schedules begin. You can pick
      another time, or a number of hours before candle lighting (with Jewish Calendar);
   2. turns it off **after Shabbat ends**, but only once every Shabbat schedule has finished. If Home Assistant was
@@ -273,8 +277,10 @@ A mode is a Home Assistant **label**, named `שבת` or `חג`.
 - **Automatic chag** (optional, needs the core Jewish Calendar integration). The same for chag mode: on erev chag at
   the time you choose, off after the chag ends. A chag that falls on Shabbat is covered by Shabbat mode, since nothing
   in the calendar says so a day ahead.
-- **Switching an automatic mode off** disables its automation. It is never deleted, so changes you made to it in Home
+- **Going back to manual** disables its automation. It is never deleted, so changes you made to it in Home
   Assistant survive.
+- **A schedule that starts too early.** A Shabbat range that begins on Friday before the mode comes on does not run:
+  its automation is still off when the range begins. The card names such schedules under *Automatic*.
 
 ### A typical week with automatic Shabbat
 
