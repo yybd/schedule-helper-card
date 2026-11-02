@@ -447,6 +447,57 @@ const CHECKS = [
     must(!r.querySelector('.next-line'), 'no start shown that it cannot read');
     card.remove();
   `],
+  ['a reconnect that sends the list again is not a change made elsewhere', 'lang=en', `
+    await openEditor('schedule.water_heater_weekdays');
+    click(D().querySelector('[data-act=add][data-day="6"]'), 'add Saturday');
+    D().querySelector('#from').value = '18:00';
+    D().querySelector('#to').value = '22:00';
+    click(D().querySelector('[data-act=rangeOk]'), 'ok');
+    await sleep(100);
+    // What home-assistant-js-websocket does after a reconnect: the whole collection again, as "added".
+    for (const item of fake._schedules) fake._scheduleChanged('added', item);
+    await sleep(400);
+    must(!D().querySelector('[data-act=reloadRemote]'), 'no banner');
+    must(D().querySelector('[data-act=edit][data-day="6"]'), 'the local edit is still there');
+  `],
+  ['a closed range panel hands the focus back to its day', 'lang=en', `
+    await openEditor('schedule.water_heater_weekdays');
+    const active = () => D().getRootNode().activeElement;
+    click(D().querySelector('[data-act=add][data-day="2"]'), 'add Tuesday');
+    await sleep(50);
+    click(D().querySelector('[data-act=rangeCancel]'), 'cancel');
+    await sleep(50);
+    must(active()?.dataset?.focus === 'add-2', 'focus on add: ' + active()?.outerHTML?.slice(0, 80));
+    click(D().querySelector('[data-act=add][data-day="2"]'), 'add Tuesday');
+    D().querySelector('#from').value = '20:00';
+    D().querySelector('#to').value = '21:00';
+    click(D().querySelector('[data-act=rangeOk]'), 'ok');
+    await sleep(50);
+    must(active()?.dataset?.focus === 'add-2', 'focus after OK');
+  `],
+  ['typing a start time keeps the caret through a redraw', '', `
+    click(B().querySelector('[data-act=startEdit][data-mode="שבת"]'), 'change start');
+    const f = B().getElementById('start-at');
+    f.focus();
+    f.value = '13:4';
+    f.dispatchEvent(new Event('input', { bubbles: true }));
+    f.setSelectionRange(4, 4);
+    B().host._render(true);
+    const g = B().getElementById('start-at');
+    must(g.selectionStart === 4 && g.value === '13:4', 'caret ' + g.selectionStart + ' in ' + g.value);
+  `],
+  ['a renamed automatic automation is not offered as a member', '', `
+    toggle(B().querySelector('[data-automode="שבת"][value=auto]'), true, 'automatic Shabbat');
+    await sleep(1500);
+    const id = Object.keys(fake.states).find((k) => fake.states[k].attributes.friendly_name === 'Beit · מצב שבת אוטומטי');
+    fake._setState(id, { ...fake.states[id], attributes: { ...fake.states[id].attributes, friendly_name: 'Our Shabbat' } });
+    await sleep(600);
+    click(B().querySelector('[data-act=members][data-mode="שבת"]'), 'choose automations');
+    await sleep(400);
+    const dlg = B().querySelector('dialog');
+    must(dlg && dlg.querySelectorAll('[data-id]').length, 'the list');
+    must(!dlg.querySelector('[data-id="' + id + '"]'), 'not offered');
+  `],
   ['a flipped switch stays put until HA catches up, and goes back if the call fails', '', `
     // In HA the state change arrives after the service call returns; the fake applies it at once unless told otherwise.
     const apply = fake._setState.bind(fake);

@@ -223,6 +223,10 @@ test('scheduleOffSteps reads both shapes, and gives up on what it cannot read', 
   };
   assert.deepEqual(scheduleOffSteps(byFrom, s), [{ domain: 'switch', service: 'turn_off', data: {}, target: { entity_id: 'switch.a' } }]);
   assert.deepEqual(scheduleOffSteps({ ...byFrom, triggers: [byFrom.triggers[0]] }, s), []);
+  // HA's automation editor adds `metadata: {}` to every action it saves.
+  const saved = structuredClone(byState);
+  saved.actions[0].choose[1].sequence[0].metadata = {};
+  assert.deepEqual(scheduleOffSteps(saved, s), [{ domain: 'climate', service: 'turn_off', data: {}, target: { entity_id: 'climate.a' } }]);
 });
 
 // ---- automatic Shabbat ---------------------------------------------------------------------------------------------

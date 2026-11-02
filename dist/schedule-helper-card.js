@@ -262,7 +262,7 @@ export function scheduleOffSteps(config, scheduleEntityId) {
   const calls = [];
   for (const s of steps) {
     const [domain, service, ...rest] = String(s?.action ?? s?.service ?? '').split('.');
-    if (!domain || !service || rest.length || Object.keys(s).some((k) => !['action', 'service', 'data', 'target', 'alias'].includes(k))) return null;
+    if (!domain || !service || rest.length || Object.keys(s).some((k) => !['action', 'service', 'data', 'target', 'alias', 'metadata'].includes(k))) return null;
     calls.push({ domain, service, data: s.data || {}, target: s.target || {} });
   }
   return calls;
@@ -2109,6 +2109,7 @@ class ScheduleEditor {
     this.mode = entityId ? card._modeOf(entityId) : null;
     this.originalMode = this.mode;
     this.originalName = this.week.name;
+    this.base = JSON.stringify(this.week.toHA()); // the version saved in HA when this dialog opened
     this.view = 'main'; // 'picker' | 'confirmDelete'
     this.device = null;
     this.hvacMode = null;
@@ -2288,7 +2289,9 @@ class ScheduleEditor {
     }
     const t = this.t;
     const root = this.card._root();
-    const focusKey = root.activeElement?.dataset?.focus;
+    // A panel that closed hands the focus back to the button that opened it, not to the page.
+    const focusKey = this.focusNext ?? root.activeElement?.dataset?.focus;
+    this.focusNext = null;
     const scroller = this.dlg.querySelector('.dlg-body');
     const scrollTop = scroller?.scrollTop ?? 0;
     this.dlg.setAttribute('dir', this.card._dirAttr());
@@ -2324,7 +2327,9 @@ class ScheduleEditor {
   changedElsewhere(change) {
     if (this.saving || !this.dlg?.open) return; // our own write coming back, or already closing
     // Or it already says what this dialog says (our own write arriving late, or the same edit made twice).
-    if (change.item && JSON.stringify(WeekSchedule.fromHA(change.item).toHA()) === JSON.stringify(this.week.toHA())) return;
+    // Or the version this dialog opened with, sent again: after a reconnect HA sends the whole list once more.
+    const theirs = change.item && JSON.stringify(WeekSchedule.fromHA(change.item).toHA());
+    if (theirs && (theirs === JSON.stringify(this.week.toHA()) || theirs === this.base)) return;
     this.remote = change;
     if (this.view === 'main') this.render();
   }
@@ -2533,6 +2538,7 @@ class ScheduleEditor {
         if (this.remote?.item) {
           this.week = WeekSchedule.fromHA(this.remote.item);
           this.originalName = this.week.name;
+          this.base = JSON.stringify(this.week.toHA());
         }
         this.remote = null;
         this.rangeEdit = this.copyFrom = null;
@@ -2570,14 +2576,19 @@ class ScheduleEditor {
       case 'add': this.rangeEdit = { day, index: null }; this.copyFrom = null; this.focusPanel = true; break;
       case 'edit': this.rangeEdit = { day, index }; this.copyFrom = null; this.focusPanel = true; break;
       case 'remove': w.days[DAYS[day]] = w.days[DAYS[day]].filter((_, k) => k !== index); this.rangeEdit = null; break;
-      case 'rangeCancel': this.rangeEdit = null; break;
-      case 'rangeOk': this.applyRange(); break;
+      case 'rangeCancel': this.focusNext = `add-${this.rangeEdit.day}`; this.rangeEdit = null; break;
+      case 'rangeOk': {
+        const d = this.rangeEdit.day;
+        if (this.applyRange()) this.focusNext = `add-${d}`;
+        break;
+      }
       case 'copyOpen': this.copyFrom = { day, chosen: new Set() }; this.rangeEdit = null; this.focusPanel = true; break;
       case 'copyPreset': for (const k of el.dataset.v === 'weekdays' ? [0, 1, 2, 3, 4] : [0, 1, 2, 3, 4, 5, 6]) this.copyFrom.chosen.add(k); break;
-      case 'copyCancel': this.copyFrom = null; break;
+      case 'copyCancel': this.focusNext = `copy-${this.copyFrom.day}`; this.copyFrom = null; break;
       case 'copyOk': {
         const from = w.days[DAYS[this.copyFrom.day]];
         for (const k of this.copyFrom.chosen) if (k !== this.copyFrom.day) w.days[DAYS[k]] = from.map((b) => ({ ...b }));
+        this.focusNext = `copy-${this.copyFrom.day}`;
         this.copyFrom = null;
         break;
       }
@@ -2995,13 +3006,18 @@ class ScheduleHelperShabbatCard extends CardBase {
       });
     }
     const t = this._t;
-    const focusId = root.activeElement?.id;
+    const active = root.activeElement;
+    const focusId = active?.id;
+    // A redraw while typing a start time keeps the caret where it was, not at the start of the field.
+    const caret = typeof active?.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null;
     this._paint(
       this._config.title !== '' ? `<div class="header"><h2>${esc(this._config.title ?? t.shabbatAndChag)}</h2></div>` : '',
       `${this._config.show_calendar !== false ? this._calendarHtml(states, cal) : ''}
       ${modes.map((m) => this._modeHtml(m, members[m], cal)).join('')}`,
     );
-    if (focusId) root.getElementById?.(focusId)?.focus();
+    const again = focusId && root.getElementById?.(focusId);
+    again?.focus();
+    if (again && caret) again.setSelectionRange?.(...caret);
   }
 
   _calendarHtml(states, cal) {
@@ -3260,8 +3276,10 @@ class MembershipDialog {
     if (sig === this._sig) return; // hass changes many times a second; a rebuilt list swallows clicks
     this._sig = sig;
     const q = this.query.trim().toLowerCase();
+    // Neither automatic automation may join a mode (it would switch itself off), renamed ones included.
+    const automatic = new Set(Object.values(this.card._auto || {}).filter(Boolean).map((a) => a.entityId));
     const autos = Object.values(states)
-      .filter((e) => e.entity_id.startsWith('automation.') && !isAutoAlias(e.attributes?.friendly_name))
+      .filter((e) => e.entity_id.startsWith('automation.') && !isAutoAlias(e.attributes?.friendly_name) && !automatic.has(e.entity_id))
       .filter((e) => !q || entityName(e).toLowerCase().includes(q) || e.entity_id.includes(q))
       .sort((a, b) => entityName(a).localeCompare(entityName(b), this.card._lang));
     const list = this.dlg.querySelector('.checklist');
