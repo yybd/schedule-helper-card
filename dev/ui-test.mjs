@@ -384,6 +384,69 @@ const CHECKS = [
     must(reg.labels.includes(shbt), 'the automation joined Shabbat mode');
     must(S().querySelector('.row[data-id="schedule.garden_lights"] .state').textContent !== 'No automation', 'the row knows');
   `],
+  ['a device added to a schedule is not added twice when a later step fails', 'lang=en', `
+    const days = Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((d) => [d, []]));
+    await fake.callWS({ type: 'schedule/create', name: 'Porch', ...days, friday: [{ from: '18:00:00', to: '22:00:00' }] });
+    await sleep(1200);
+    const shbt = (await fake.callWS({ type: 'config/label_registry/list' })).find((l) => l.name === 'שבת').label_id;
+    await fake.callWS({ type: 'config/entity_registry/update', entity_id: 'schedule.porch', labels: [shbt] });
+    await sleep(1200);
+    await openEditor('schedule.porch');
+    await sleep(300);
+    click(D().querySelector('[data-act=pick]'), 'choose a device');
+    await sleep(600);
+    click(D().querySelector('[data-act=choose][data-id="light.balcony"]'), 'balcony light');
+    fake.failNext('config/entity_registry/update', 'Nope');
+    click(D().querySelector('[data-act=save]'), 'save');
+    await sleep(1500);
+    must(!D(), 'the dialog closed, so it cannot be saved again');
+    const driving = fake.calls.filter((c) => c.method === 'POST' && c.body?.triggers?.[0]?.entity_id?.[0] === 'schedule.porch');
+    must(driving.length === 1, 'one automation: ' + driving.length);
+  `],
+  ['Save with a range panel open keeps the typed range, and drops an untouched one', 'lang=en', `
+    await openEditor('schedule.water_heater_weekdays');
+    click(D().querySelector('[data-act=add][data-day="6"]'), 'add Saturday');
+    D().querySelector('#from').value = '18:00';
+    D().querySelector('#to').value = '22:00';
+    click(D().querySelector('[data-act=save]'), 'save');
+    await sleep(800);
+    const item = () => fake._schedules.find((x) => x.id === 'water_heater_weekdays');
+    must(item().saturday?.[0]?.from === '18:00:00', 'typed range saved: ' + JSON.stringify(item().saturday));
+    await openEditor('schedule.water_heater_weekdays');
+    click(D().querySelector('[data-act=add][data-day="5"]'), 'add Friday, left as it opened');
+    click(D().querySelector('[data-act=save]'), 'save');
+    await sleep(800);
+    must(!(item().friday || []).length, 'untouched panel not saved: ' + JSON.stringify(item().friday));
+  `],
+  ['automatic: the choice shows at once, the switches follow the calendar, the editor locks them', 'lang=en', `
+    const apply = fake._setState.bind(fake);
+    const radio = () => B().querySelector('[data-automode="שבת"][value=auto]');
+    toggle(radio(), true, 'automatic');
+    await sleep(30);
+    must(radio().checked, 'shown as chosen while it is written');
+    await sleep(1500);
+    // A Sunday: outside Shabbat, so every Shabbat automation is off now.
+    const members = Object.keys(fake.entities).filter((id) => id.startsWith('automation.') && fake.entities[id].labels?.includes('shbt'))
+      .filter((id) => fake.states[id]?.attributes.friendly_name !== 'Beit · מצב שבת אוטומטי');
+    must(members.length && members.every((id) => fake.states[id].state === 'off'), 'members off: ' + members.map((id) => fake.states[id].state));
+    await openEditor('schedule.living_room_ac_shabbat');
+    await sleep(500);
+    const sw = D().querySelector('[data-field=auto]');
+    must(sw && sw.disabled, 'locked in the editor too');
+  `],
+  ['a non-admin can go manual from an automatic mode', '', `
+    toggle(B().querySelector('[data-automode="שבת"][value=auto]'), true, 'automatic (admin)');
+    await sleep(1500);
+    const card = document.createElement('schedule-helper-shabbat-card');
+    card.setConfig({});
+    document.body.appendChild(card);
+    card.hass = { ...fake.snapshot(), user: { is_admin: false } };
+    await sleep(800);
+    const r = card.shadowRoot;
+    must(!r.querySelector('[data-automode="שבת"][value=manual]').disabled, 'manual can be chosen');
+    must(!r.querySelector('.next-line'), 'no start shown that it cannot read');
+    card.remove();
+  `],
   ['a flipped switch stays put until HA catches up, and goes back if the call fails', '', `
     // In HA the state change arrives after the service call returns; the fake applies it at once unless told otherwise.
     const apply = fake._setState.bind(fake);

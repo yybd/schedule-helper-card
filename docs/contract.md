@@ -87,6 +87,10 @@ Written with `POST /api/config/automation/config/<id>`. From a card this is `has
   - Joining an **empty** mode (no other member) follows the calendar instead: off when the mode is over and not about
     to begin (the facts below, under *Catch-up*), on otherwise. Without a readable calendar they are left as they are.
     *(Card 2.0.2. The Beit app still leaves them as they are; to be aligned.)*
+  - For **chag**, Jewish Calendar's `issur_melacha_in_effect*` and `erev_shabbat_hag*` are on every Shabbat too. A
+    plain Shabbat counts as outside chag: issur is on and `upcoming_havdalah*` equals `upcoming_shabbat_havdalah*`, or
+    erev is on and `upcoming_candle_lighting*` equals `upcoming_shabbat_candle_lighting*`. *(Card 2.4; only this join
+    check. The catch-up template below is unchanged, and the Beit app does not make this distinction yet.)*
 - **Taking an automation out of a mode** also takes out the schedules its config refers to, except those another
   automation of the mode still refers to.
 - **Switching a mode:** `automation.turn_on` / `automation.turn_off` with target `{label_id}`, or with the member list. The switch shows:

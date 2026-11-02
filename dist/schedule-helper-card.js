@@ -244,7 +244,8 @@ const asList = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]);
 export function scheduleOffSteps(config, scheduleEntityId) {
   const onSchedule = (x) => asList(x?.entity_id).includes(scheduleEntityId);
   const firesAtOff = asList(config?.triggers ?? config?.trigger)
-    .filter((t) => (t.trigger ?? t.platform) === 'state' && onSchedule(t) && (t.to == null || asList(t.to).includes('off')));
+    .filter((t) => (t.trigger ?? t.platform) === 'state' && onSchedule(t) &&
+      (t.to == null ? !asList(t.from).includes('off') : asList(t.to).includes('off')));
   if (!firesAtOff.length) return [];
   const offIds = firesAtOff.map((t) => t.id).filter((id) => id != null);
   const picksOff = (c) => (c?.condition === 'trigger' && asList(c.id).some((id) => offIds.includes(id))) ||
@@ -310,6 +311,7 @@ export function findCalendar(states) {
     candleLighting: jc('sensor', 'upcoming_candle_lighting'),
     shabbatCandleLighting: jc('sensor', 'upcoming_shabbat_candle_lighting'),
     havdalah: jc('sensor', 'upcoming_havdalah'),
+    shabbatHavdalah: jc('sensor', 'upcoming_shabbat_havdalah'),
     date: jc('sensor', 'date'),
     parasha: jc('sensor', 'weekly_torah_portion'),
     holiday: jc('sensor', 'holiday'),
@@ -390,9 +392,20 @@ function outsideTemplate(mode, cal) {
  * when the house has no calendar or its sensors are not readable (e.g. right after a restart).
  */
 export function modeOutsideNow(mode, states, now = new Date()) {
-  const o = outsideFacts(mode, findCalendar(states));
+  const cal = findCalendar(states);
+  const o = outsideFacts(mode, cal);
   if (!o || o.facts.some(([id]) => !usable(states?.[id]))) return null;
-  return o.facts.every(([id, st]) => states[id].state === st) && !(o.friday && now.getDay() === 5);
+  const outside = o.facts.every(([id, st]) => states[id].state === st) && !(o.friday && now.getDay() === 5);
+  return outside || mode !== 'חג' ? outside : shabbatOnly(cal, states);
+}
+
+/**
+ * Jewish Calendar's issur melacha and erev sensors are on for every Shabbat too. True when what is on now is Shabbat
+ * alone: the coming end (or start) is the same as Shabbat's, so no chag is in it. False when unknown.
+ */
+function shabbatOnly(cal, states) {
+  const same = (a, b) => !!(a && b && usable(states[a]) && usable(states[b]) && states[a].state === states[b].state);
+  return states[cal.issur]?.state === 'on' ? same(cal.havdalah, cal.shabbatHavdalah) : same(cal.candleLighting, cal.shabbatCandleLighting);
 }
 
 /** Home Assistant's own "add an integration" page for Jewish Calendar (the path my.home-assistant.io redirects to). */
@@ -447,7 +460,8 @@ export function nextAutoStart(mode, start, states, cal, now = new Date()) {
     const sensor = cal?.shabbatCandleLighting || cal?.candleLighting;
     const lighting = new Date(states?.[sensor]?.state ?? NaN);
     if (isNaN(lighting)) return null;
-    return new Date(lighting.getTime() - Number(start.hoursBefore) * 3600000);
+    const at = new Date(lighting.getTime() - Number(start.hoursBefore) * 3600000);
+    return at > now ? at : null; // during Shabbat the sensor may still name this one; next week's time is not known yet
   }
   const at = parseTimeInput(start?.at ?? DEFAULT_AUTO_START.at) ?? 720;
   const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ((5 - now.getDay() + 7) % 7), Math.floor(at / 60), at % 60);
@@ -1254,9 +1268,12 @@ export const STRINGS = {
     manualHint: (m) => `רק אתם מדליקים ומכבים את מצב ה${m}. שום דבר לא ידליק אותו לבד.`,
     nextOn: (when) => `יידלק ${when}`,
     autoLocked: 'במצב אוטומטי המתגים נעולים. כדי להדליק או לכבות בעצמכם, בחרו "ידני".',
+    lockedByAuto: 'נשלט על ידי המצב האוטומטי',
+    manualStaysOn: (m) => `מצב ה${m} דלוק, ובמצב ידני הוא לא ייכבה לבד. כבו אותו כשתרצו, או חזרו ל"אוטומטי".`,
     startsEarly: (name, time, start) => `${name} מתחיל בשישי ב-${time}, לפני שמצב השבת נדלק (${start}), ולכן באותו טווח הוא לא יפעל.`,
     saved: 'התזמון נשמר',
     createdPartly: (e) => `התזמון והאוטומציה נוצרו, אבל השלב האחרון נכשל: ${e}. פתחו את התזמון כדי לבדוק את הסוג שלו.`,
+    attachedPartly: (e) => `האוטומציה נוצרה, אבל השלב האחרון נכשל: ${e}. פתחו את התזמון כדי לבדוק את הסוג שלו.`,
     created: 'התזמון נוצר',
     namePlaceholder: 'יתמלא משם המכשיר',
     atStart: 'בתחילת הטווח',
@@ -1411,9 +1428,12 @@ export const STRINGS = {
     manualHint: (m) => `Only you switch ${m} mode on and off. Nothing switches it on by itself.`,
     nextOn: (when) => `Comes on ${when}`,
     autoLocked: 'While automatic, the switches are locked. To switch it yourself, choose Manual.',
+    lockedByAuto: 'switched by the automatic mode',
+    manualStaysOn: (m) => `${m} mode is on, and while manual it does not switch off by itself. Switch it off when you want, or go back to Automatic.`,
     startsEarly: (name, time, start) => `${name} starts on Friday at ${time}, before Shabbat mode comes on (${start}), so it will not run that range.`,
     saved: 'Schedule saved',
     createdPartly: (e) => `The schedule and its automation were created, but the last step failed: ${e}. Open the schedule to check its type.`,
+    attachedPartly: (e) => `The automation was created, but the last step failed: ${e}. Open the schedule to check its type.`,
     created: 'Schedule created',
     namePlaceholder: "Filled in from the device's name",
     atStart: 'When a range starts',
@@ -1609,6 +1629,20 @@ class CardBase extends Base {
       return real;
     }
     return p.state;
+  }
+
+  /**
+   * Whether an automation belongs to a mode that is automatic right now: its switch is then the automatic mode's, and
+   * one flipped by hand would be overruled at the mode's next start or end. Found by alias, which every user can read.
+   */
+  _lockedByAuto(automationId) {
+    const reg = this._registry();
+    const mine = reg.entityLabels[automationId] || [];
+    return MODES.some((m) => {
+      const label = labelNamed(reg, m);
+      return label && mine.includes(label.label_id) && Object.values(this._hass?.states || {})
+        .some((e) => e.entity_id.startsWith('automation.') && e.attributes?.friendly_name === AUTO_ALIAS[m] && e.state === 'on');
+    });
   }
 
   /** Flips automations on or off, showing the new position at once and taking it back if the call fails. */
@@ -2164,6 +2198,38 @@ class ScheduleEditor {
     }
   }
 
+  /**
+   * Puts the open range panel's times into the week and closes it; false (the panel showing why) when they are not
+   * valid. `onlyIfChanged`: a panel left as it opened is just closed (Save with an untouched "add range" open).
+   */
+  applyRange({ onlyIfChanged = false } = {}) {
+    const w = this.week;
+    const from = this.dlg.querySelector('#from')?.value ?? this.rangeEdit.from ?? '';
+    const to = this.dlg.querySelector('#to')?.value ?? this.rangeEdit.to ?? '';
+    const d = DAYS[this.rangeEdit.day];
+    const old = this.rangeEdit.index != null ? w.days[d][this.rangeEdit.index] : null;
+    const shown = old ?? { start: 8 * 60, end: 9 * 60 }; // what the panel opens with
+    if (onlyIfChanged && from === hm(shown.start) && to === hm(shown.end)) {
+      this.rangeEdit = null;
+      return true;
+    }
+    Object.assign(this.rangeEdit, { from, to }); // kept if the panel is drawn again with an error
+    const start = parseTimeInput(from);
+    let end = parseTimeInput(to);
+    if (end === 0) end = 1440; // "until midnight"
+    const error = start == null || end == null || start >= 1440 ? this.t.errTime : end <= start ? this.t.errRange : null;
+    if (error) {
+      this.rangeEdit.error = error;
+      this.focusPanel = true;
+      return false;
+    }
+    const next = w.days[d].filter((_, k) => k !== this.rangeEdit.index);
+    next.push({ ...(old?.data ? { data: old.data } : {}), start, end });
+    w.days[d] = next.sort(byStart);
+    this.rangeEdit = null;
+    return true;
+  }
+
   /** An existing schedule that no automation uses: choosing a device creates the automation for it. */
   get attachable() {
     return !this.isNew && Array.isArray(this.automations) && !this.automations.length && !this.automationsUnknown;
@@ -2348,9 +2414,10 @@ class ScheduleEditor {
     else {
       inner = autos.map((a) => {
         const on = this.card._stateOf(a) === 'on';
+        const locked = this.card._lockedByAuto(a);
         return `<div class="opt"><div class="grow"><div>${esc(entityName(states[a]) || a)}</div>
-          <div class="muted small">${esc(on ? t.autoOn : t.autoOff)}</div></div>
-          ${switchHtml({ checked: on, label: entityName(states[a]) || a, attrs: `data-field="auto" data-id="${esc(a)}" data-focus="auto-${esc(a)}"` })}</div>`;
+          <div class="muted small">${esc(on ? t.autoOn : t.autoOff)}${locked ? ` · ${esc(t.lockedByAuto)}` : ''}</div></div>
+          ${switchHtml({ checked: on, disabled: locked, label: entityName(states[a]) || a, attrs: `data-field="auto" data-id="${esc(a)}" data-focus="auto-${esc(a)}"` })}</div>`;
       }).join('');
     }
     return `<div class="label">${esc(t.drives)}</div>${inner}`;
@@ -2359,7 +2426,7 @@ class ScheduleEditor {
   renderLinked() {
     const el = this.dlg?.querySelector('.linked');
     if (!el) return;
-    const sig = JSON.stringify([this.automations, (this.automations || []).map((a) => this.card._stateOf(a))]);
+    const sig = JSON.stringify([this.automations, (this.automations || []).map((a) => [this.card._stateOf(a), this.card._lockedByAuto(a)])]);
     if (sig === this._linkedSig) return;
     this._linkedSig = sig;
     const focusKey = this.card._root().activeElement?.dataset?.focus;
@@ -2504,31 +2571,7 @@ class ScheduleEditor {
       case 'edit': this.rangeEdit = { day, index }; this.copyFrom = null; this.focusPanel = true; break;
       case 'remove': w.days[DAYS[day]] = w.days[DAYS[day]].filter((_, k) => k !== index); this.rangeEdit = null; break;
       case 'rangeCancel': this.rangeEdit = null; break;
-      case 'rangeOk': {
-        const from = this.dlg.querySelector('#from').value;
-        const to = this.dlg.querySelector('#to').value;
-        Object.assign(this.rangeEdit, { from, to }); // kept if the panel is drawn again with an error
-        const start = parseTimeInput(from);
-        let end = parseTimeInput(to);
-        if (end === 0) end = 1440; // "until midnight"
-        if (start == null || end == null || start >= 1440) {
-          this.rangeEdit.error = this.t.errTime;
-          this.focusPanel = true;
-          break;
-        }
-        if (end <= start) {
-          this.rangeEdit.error = this.t.errRange;
-          this.focusPanel = true;
-          break;
-        }
-        const d = DAYS[this.rangeEdit.day];
-        const old = this.rangeEdit.index != null ? w.days[d][this.rangeEdit.index] : null;
-        const next = w.days[d].filter((_, k) => k !== this.rangeEdit.index);
-        next.push({ ...(old?.data ? { data: old.data } : {}), start, end });
-        w.days[d] = next.sort(byStart);
-        this.rangeEdit = null;
-        break;
-      }
+      case 'rangeOk': this.applyRange(); break;
       case 'copyOpen': this.copyFrom = { day, chosen: new Set() }; this.rangeEdit = null; this.focusPanel = true; break;
       case 'copyPreset': for (const k of el.dataset.v === 'weekdays' ? [0, 1, 2, 3, 4] : [0, 1, 2, 3, 4, 5, 6]) this.copyFrom.chosen.add(k); break;
       case 'copyCancel': this.copyFrom = null; break;
@@ -2597,6 +2640,8 @@ class ScheduleEditor {
   async save() {
     const t = this.t;
     this.syncName();
+    // Times typed into an open range panel are part of what is saved, not dropped.
+    if (this.rangeEdit && !this.applyRange({ onlyIfChanged: true })) return this.render();
     const problem = this.week.validate(this.lang) ?? (this.week.isEmpty ? t.errEmpty : null) ?? (this.isNew && !this.device ? t.errDevice : null);
     if (problem) {
       this.error = problem;
@@ -2618,6 +2663,7 @@ class ScheduleEditor {
         if (this.attachable && this.device) {
           // The mode it already has (or the one just chosen): the new automation joins it.
           await addScheduleAutomation(h, this.entityId, this.week.name, this.currentTarget(), { labelName: this.mode });
+          this.attached = true;
         }
         if (this.driven) {
           // Read again: it may have been edited by hand in HA since this dialog opened, and is then left alone.
@@ -2645,11 +2691,11 @@ class ScheduleEditor {
       this.card._toast(this.isNew ? t.created : t.saved, 3000);
     } catch (err) {
       this.saving = false;
-      if (err?.created) {
-        // The schedule and its automation were created; only a later step failed. Saving again would duplicate them.
+      if (err?.created || err?.posted || this.attached) {
+        // The automation (and a new schedule) were created; only a later step failed. Saving again would duplicate them.
         this.card._afterWrite();
         this.close();
-        this.card._toast(t.createdPartly(errorText(err)), 12000);
+        this.card._toast((this.isNew ? t.createdPartly : t.attachedPartly)(errorText(err)), 12000);
         return;
       }
       this.error = t.saveFailed(errorText(err));
@@ -2992,7 +3038,7 @@ class ScheduleHelperShabbatCard extends CardBase {
         return `<div class="sched"><span class="dot ${on ? 'on' : ''}"></span><span class="grow">${esc(entityName(s))}</span>
           ${next && !isNaN(next) ? `<span class="muted small">${esc(`${on ? t.ends : t.starts} ${formatWhen(next, now, this._lang)}`)}</span>` : ''}</div>`;
       }).join('')}</div>` : ''}
-      ${this._autoHtml(mode, cal)}
+      ${this._autoHtml(mode, cal, state)}
       ${this._isAdmin ? `<div class="mode-foot"><button class="btn" data-act="members" data-mode="${esc(mode)}">${esc(t.chooseAutomations)}</button></div>` : ''}
     </section>`;
   }
@@ -3003,18 +3049,22 @@ class ScheduleHelperShabbatCard extends CardBase {
     return (auto?.config && parseAutoStart(auto.config)) || this._start?.[mode] || DEFAULT_AUTO_START;
   }
 
-  _autoHtml(mode, cal) {
+  _autoHtml(mode, cal, state) {
     const t = this._t;
     const auto = this._auto?.[mode];
     const on = !!auto && this._hass.states[auto.entityId]?.state === 'on';
     const unavailable = !auto && !autoAvailable(mode, cal);
-    const disabled = !this._isAdmin || !this._autoLoaded || this._busy === `auto-${mode}` || unavailable;
+    // Anyone may switch an existing automatic mode on or off (an automation service); creating one is for admins.
+    const disabled = (!this._isAdmin && !auto) || !this._autoLoaded || this._busy === `auto-${mode}` || unavailable;
+    const chosen = this._autoChoice?.[mode] ?? on; // shown at once, while the switch is written
     const start = this._currentStart(mode);
     const canEditStart = this._isAdmin && this._autoLoaded && !unavailable && (!auto || (auto.ours && parseAutoStart(auto.config)));
     const hint = unavailable ? (mode === 'שבת' ? t.errNoCalendar : t.errNoJewishCalendar)
       : auto && !auto.ours ? t.autoShabbatNotOurs : on ? t.autoHint(mode) : t.manualHint(t.modeName[mode]);
     const now = new Date();
-    const next = on ? nextAutoStart(mode, start, this._hass.states, cal, now) : null;
+    // Only a start read from the automation itself: without its config (non-admins, one changed by hand) it is not known.
+    const known = auto?.config ? parseAutoStart(auto.config) : null;
+    const next = on && known ? nextAutoStart(mode, known, this._hass.states, cal, now) : null;
     const weeks = Object.fromEntries(modeMembers(this._hass.states, this._registry(), mode, 'schedule')
       .filter((e) => this._weeks?.[e.entity_id]).map((e) => [e.entity_id, this._weeks[e.entity_id]]));
     const early = startsBeforeMode(weeks, next);
@@ -3024,11 +3074,12 @@ class ScheduleHelperShabbatCard extends CardBase {
     const addCalendar = unavailable && this._isAdmin && !cal?.issur
       ? `<div class="small"><a class="link" href="${ADD_JEWISH_CALENDAR}" target="_top">${esc(t.addJewishCalendar)}</a></div>` : '';
     return `<div class="auto">
-      <div class="seg" role="radiogroup" aria-label="${esc(t.runBy)}">${radio('manual', t.runManual, !on)}${radio('auto', t.runAuto, on)}</div>
+      <div class="seg" role="radiogroup" aria-label="${esc(t.runBy)}">${radio('manual', t.runManual, !chosen)}${radio('auto', t.runAuto, chosen)}</div>
       <div class="muted small">${esc(hint)}</div>
       ${addCalendar}
       ${next ? `<div class="small next-line">${esc(t.nextOn(formatWhen(next, now, this._lang)))}</div>` : ''}
       ${on ? `<div class="muted small">${esc(t.autoLocked)}</div>` : ''}
+      ${!on && (state === 'on' || state === 'partial') ? `<div class="warn small" role="note">${esc(t.manualStaysOn(t.modeName[mode]))}</div>` : ''}
       ${canEditStart && this._startEdit?.mode !== mode ? `<div class="small start-line">${esc(t.startLabel)}: ${esc(startText(start, this._lang))} ·
         <button class="link" data-act="startEdit" data-mode="${esc(mode)}">${esc(t.change)}</button></div>` : ''}
       ${early.map((e) => `<div class="warn small" role="note">${esc(t.startsEarly(entityName(this._hass.states[e.entityId]), hm(e.start),
@@ -3133,11 +3184,20 @@ class ScheduleHelperShabbatCard extends CardBase {
     } else if (d.automode) {
       const mode = d.automode;
       const auto = e.target.value === 'auto';
+      this._autoChoice = { ...this._autoChoice, [mode]: auto };
       this._busy = `auto-${mode}`;
       this._render(true);
-      await this._run(() => (auto ? enableAuto(this._h, mode, { start: this._currentStart(mode) }) : disableAuto(this._h, mode)));
+      await this._run(async () => {
+        if (!auto) return disableAuto(this._h, mode);
+        await enableAuto(this._h, mode, { start: this._currentStart(mode) });
+        // The switches lock now: they must not stay on all week, or off through Shabbat, until the next start or end.
+        const outside = modeOutsideNow(mode, this._hass.states);
+        if (outside !== null) await setModeEnabled(this._h, this._registry(), mode, !outside);
+      });
       this._busy = null;
       await this._loadAuto();
+      delete this._autoChoice[mode];
+      this._render(true);
       this._loadLabels();
     } else if (d.startKind !== undefined && this._startEdit) {
       this._startEdit.kind = e.target.value;

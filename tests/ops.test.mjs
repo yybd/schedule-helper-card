@@ -213,6 +213,16 @@ test('scheduleOffSteps reads both shapes, and gives up on what it cannot read', 
   delayed.actions[0].choose[1].sequence.push({ delay: '00:01:00' });
   assert.equal(scheduleOffSteps(delayed, s), null);
   assert.equal(scheduleOffSteps({ triggers: [{ trigger: 'state', entity_id: [s] }], actions: [{ action: 'switch.toggle' }] }, s), null);
+  // Triggers by `from`: the one leaving "off" fires at the start only, never taken for the end.
+  const byFrom = {
+    triggers: [{ trigger: 'state', entity_id: [s], from: 'off', id: 'start' }, { trigger: 'state', entity_id: [s], from: 'on', id: 'stop' }],
+    actions: [{ choose: [
+      { conditions: [{ condition: 'trigger', id: 'start' }], sequence: [{ action: 'switch.turn_on', target: { entity_id: 'switch.a' } }] },
+      { conditions: [{ condition: 'trigger', id: 'stop' }], sequence: [{ action: 'switch.turn_off', target: { entity_id: 'switch.a' } }] },
+    ] }],
+  };
+  assert.deepEqual(scheduleOffSteps(byFrom, s), [{ domain: 'switch', service: 'turn_off', data: {}, target: { entity_id: 'switch.a' } }]);
+  assert.deepEqual(scheduleOffSteps({ ...byFrom, triggers: [byFrom.triggers[0]] }, s), []);
 });
 
 // ---- automatic Shabbat ---------------------------------------------------------------------------------------------
@@ -578,7 +588,7 @@ test('a dashboard whose content cannot be saved is removed again', async () => {
   assert.equal(await findDashboard(hass), null);
 });
 
-import { modeOutsideNow, upgradeAuto, CATCH_UP_ID } from '../dist/schedule-helper-card.js';
+import { modeOutsideNow, upgradeAuto, CATCH_UP_ID, nextAutoStart } from '../dist/schedule-helper-card.js';
 
 const withStates = (hass, patch) => {
   for (const [id, state] of Object.entries(patch)) hass._states[id] = { ...hass.states[id], state };
@@ -616,6 +626,39 @@ test('modeOutsideNow: off by the calendar, not on a Friday for Shabbat, unknown 
   assert.equal(modeOutsideNow('חג', { ...states, [issur]: { ...states[issur], state: 'on' } }, sunday), false);
   assert.equal(modeOutsideNow('חג', { ...states, [issur]: { ...states[issur], state: 'unavailable' } }, sunday), null);
   assert.equal(modeOutsideNow('חג', {}, sunday), null);
+});
+
+test('modeOutsideNow: a plain Shabbat or erev Shabbat is outside chag', () => {
+  const states = Object.fromEntries(fixtures.states.map((s) => [s.entity_id, s]));
+  const at = (id, state) => ({ [id]: { entity_id: id, state, attributes: {} } });
+  const issur = 'binary_sensor.jewish_calendar_issur_melacha_in_effect_2';
+  const erev = 'binary_sensor.jewish_calendar_erev_shabbat_hag_2';
+  const havdalah = states['sensor.jewish_calendar_upcoming_havdalah_2'].state;
+  const saturday = new Date(2026, 0, 10, 10);
+  const shabbat = { ...states, ...at(issur, 'on'), ...at('sensor.jewish_calendar_upcoming_shabbat_havdalah_2', havdalah) };
+  assert.equal(modeOutsideNow('חג', shabbat, saturday), true);
+  assert.equal(modeOutsideNow('שבת', shabbat, saturday), false);
+  // A chag: it ends before Shabbat does.
+  const chag = { ...shabbat, ...at('sensor.jewish_calendar_upcoming_shabbat_havdalah_2', '2026-01-17T15:50:00+00:00') };
+  assert.equal(modeOutsideNow('חג', chag, saturday), false);
+  // A plain Friday afternoon: erev, and the coming candle lighting is Shabbat's.
+  const friday = new Date(2026, 0, 9, 14);
+  assert.equal(modeOutsideNow('חג', { ...states, ...at(erev, 'on') }, friday), true);
+  assert.equal(modeOutsideNow('חג', { ...states, ...at(erev, 'on'), ...at('sensor.jewish_calendar_upcoming_shabbat_candle_lighting_2', '2026-01-16T14:30:00+00:00') }, friday), false);
+});
+
+test('nextAutoStart: the coming Friday, or nothing once a relative start has passed', () => {
+  const states = Object.fromEntries(fixtures.states.map((s) => [s.entity_id, s]));
+  const cal = calOf(fixtures.states);
+  const sunday = new Date(2026, 0, 4, 9);
+  assert.equal(nextAutoStart('שבת', { at: '12:00' }, states, cal, sunday).getDay(), 5);
+  const friday1pm = new Date(2026, 0, 9, 13);
+  assert.equal(nextAutoStart('שבת', { at: '12:00' }, states, cal, friday1pm).getDate(), 16);
+  // Candle lighting 2026-01-09T14:26Z: three hours before has passed by 15:00 local on that Friday.
+  const lighting = new Date(states['sensor.jewish_calendar_upcoming_shabbat_candle_lighting_2'].state);
+  assert.ok(nextAutoStart('שבת', { hoursBefore: 3 }, states, cal, new Date(lighting.getTime() - 4 * 3600000)));
+  assert.equal(nextAutoStart('שבת', { hoursBefore: 3 }, states, cal, new Date(lighting.getTime() - 2 * 3600000)), null);
+  assert.equal(nextAutoStart('חג', { at: '12:00' }, states, cal, sunday), null);
 });
 
 test('the first automation to join an empty mode follows the calendar', async () => {
