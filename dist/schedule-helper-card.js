@@ -1253,10 +1253,7 @@ export const STRINGS = {
     runAuto: 'אוטומטי',
     manualHint: (m) => `רק אתם מדליקים ומכבים את מצב ה${m}. שום דבר לא ידליק אותו לבד.`,
     nextOn: (when) => `יידלק ${when}`,
-    offAsk: (m, when) => `מצב ה${m} אוטומטי, והוא יידלק שוב ${when}.`,
-    nextErev: { שבת: 'בשישי הבא', חג: 'בערב החג הבא' },
-    offManual: 'לכבות ולעבור לידני',
-    offForNow: 'לכבות רק עכשיו',
+    autoLocked: 'במצב אוטומטי המתגים נעולים. כדי להדליק או לכבות בעצמכם, בחרו "ידני".',
     startsEarly: (name, time, start) => `${name} מתחיל בשישי ב-${time}, לפני שמצב השבת נדלק (${start}), ולכן באותו טווח הוא לא יפעל.`,
     saved: 'התזמון נשמר',
     createdPartly: (e) => `התזמון והאוטומציה נוצרו, אבל השלב האחרון נכשל: ${e}. פתחו את התזמון כדי לבדוק את הסוג שלו.`,
@@ -1413,10 +1410,7 @@ export const STRINGS = {
     runAuto: 'Automatic',
     manualHint: (m) => `Only you switch ${m} mode on and off. Nothing switches it on by itself.`,
     nextOn: (when) => `Comes on ${when}`,
-    offAsk: (m, when) => `${m} mode is automatic, and comes on again ${when}.`,
-    nextErev: { שבת: 'next Friday', חג: 'on the next erev chag' },
-    offManual: 'Switch off and go manual',
-    offForNow: 'Switch off for now',
+    autoLocked: 'While automatic, the switches are locked. To switch it yourself, choose Manual.',
     startsEarly: (name, time, start) => `${name} starts on Friday at ${time}, before Shabbat mode comes on (${start}), so it will not run that range.`,
     saved: 'Schedule saved',
     createdPartly: (e) => `The schedule and its automation were created, but the last step failed: ${e}. Open the schedule to check its type.`,
@@ -2934,7 +2928,7 @@ class ScheduleHelperShabbatCard extends CardBase {
     const calIds = [cal.issur, cal.candleLighting, cal.havdalah, cal.date, cal.parasha, cal.holiday, ...Object.values(cal.hebcal)].filter(Boolean);
     const sig = JSON.stringify([
       this._lang, this._isAdmin, this._config, new Date().toDateString(), new Date().getHours(), this._busy,
-      calIds.map((id) => states[id]?.state), this._labels?.length, this._auto, this._start, this._offAsk,
+      calIds.map((id) => states[id]?.state), this._labels?.length, this._auto, this._start,
       this._startEdit && [this._startEdit.mode, this._startEdit.kind, this._startEdit.error], // not what is typed
       Object.values(this._auto || {}).map((a) => a && states[a.entityId]?.state),
       modes.map((m) => [members[m].automations.map((e) => [e.entity_id, e.state]), members[m].schedules.map((e) => [e.entity_id, e.last_updated])]),
@@ -2980,16 +2974,18 @@ class ScheduleHelperShabbatCard extends CardBase {
     const onCount = automations.filter((a) => a.state === 'on').length;
     const status = state === 'empty' ? t.modeEmpty : state === 'on' ? t.modeOn(automations.length) : state === 'off' ? t.modeOff : t.modePartial(onCount, automations.length);
     const busy = this._busy === mode;
+    // An automatic mode is switched by its automation; switching by hand would only be overruled at its next start.
+    const auto = this._auto?.[mode];
+    const locked = !!auto && this._hass.states[auto.entityId]?.state === 'on';
     const now = new Date();
     return `<section class="mode ${mode === 'שבת' ? 'shabbat' : 'chag'} ${state}">
       <div class="mode-head">
         <div class="grow"><div class="mode-title">${esc(t.modeTitle(name))}</div><div class="muted small">${esc(status)}</div></div>
-        ${switchHtml({ checked: state === 'on', partial: state === 'partial', disabled: state === 'empty' || busy, label: t.modeSwitch(name), attrs: `data-master="${esc(mode)}" id="master-${esc(mode)}"` })}
+        ${switchHtml({ checked: state === 'on', partial: state === 'partial', disabled: state === 'empty' || busy || locked, label: t.modeSwitch(name), attrs: `data-master="${esc(mode)}" id="master-${esc(mode)}"` })}
       </div>
-      ${this._offAsk === mode ? this._offAskHtml(mode, cal) : ''}
       ${automations.length ? `<div class="members">${automations.map((a) => `
         <div class="member"><span class="grow">${esc(entityName(a))}</span>
-          ${switchHtml({ checked: a.state === 'on', label: entityName(a), attrs: `data-auto="${esc(a.entity_id)}" id="member-${esc(a.entity_id)}"` })}</div>`).join('')}</div>` : ''}
+          ${switchHtml({ checked: a.state === 'on', disabled: locked, label: entityName(a), attrs: `data-auto="${esc(a.entity_id)}" id="member-${esc(a.entity_id)}"` })}</div>`).join('')}</div>` : ''}
       ${schedules.length ? `<div class="scheds"><div class="label muted small">${esc(t.scheduleList)}</div>${schedules.map((s) => {
         const next = s.attributes?.next_event ? new Date(s.attributes.next_event) : null;
         const on = s.state === 'on';
@@ -2999,19 +2995,6 @@ class ScheduleHelperShabbatCard extends CardBase {
       ${this._autoHtml(mode, cal)}
       ${this._isAdmin ? `<div class="mode-foot"><button class="btn" data-act="members" data-mode="${esc(mode)}">${esc(t.chooseAutomations)}</button></div>` : ''}
     </section>`;
-  }
-
-  /** Switching off a mode that is automatic: only until it comes on again, or for good (manual)? */
-  _offAskHtml(mode, cal) {
-    const t = this._t;
-    const next = nextAutoStart(mode, this._currentStart(mode), this._hass.states, cal);
-    const m = esc(mode);
-    return `<div class="panel off-ask" role="group" aria-label="${esc(t.modeSwitch(t.modeName[mode]))}">
-      <div>${esc(t.offAsk(t.modeName[mode], next ? formatWhen(next, new Date(), this._lang) : t.nextErev[mode]))}</div>
-      <div class="actions"><button class="btn" data-act="offCancel">${esc(t.cancel)}</button>
-        <button class="btn" data-act="offForNow" data-mode="${m}">${esc(t.offForNow)}</button>
-        ${this._isAdmin ? `<button class="btn primary" data-act="offManual" data-mode="${m}">${esc(t.offManual)}</button>` : ''}</div>
-    </div>`;
   }
 
   /** The start of a mode: what its automation says, or what will be used when it is created. */
@@ -3045,6 +3028,7 @@ class ScheduleHelperShabbatCard extends CardBase {
       <div class="muted small">${esc(hint)}</div>
       ${addCalendar}
       ${next ? `<div class="small next-line">${esc(t.nextOn(formatWhen(next, now, this._lang)))}</div>` : ''}
+      ${on ? `<div class="muted small">${esc(t.autoLocked)}</div>` : ''}
       ${canEditStart && this._startEdit?.mode !== mode ? `<div class="small start-line">${esc(t.startLabel)}: ${esc(startText(start, this._lang))} ·
         <button class="link" data-act="startEdit" data-mode="${esc(mode)}">${esc(t.change)}</button></div>` : ''}
       ${early.map((e) => `<div class="warn small" role="note">${esc(t.startsEarly(entityName(this._hass.states[e.entityId]), hm(e.start),
@@ -3124,26 +3108,17 @@ class ScheduleHelperShabbatCard extends CardBase {
       this._startEdit = null;
       this._render(true);
     } else if (act === 'startSave') this._saveStart(el.dataset.mode);
-    else if (act === 'offCancel') {
-      this._offAsk = null;
-      this._render(true);
-    } else if (act === 'offForNow' || act === 'offManual') {
-      this._offAsk = null;
-      this._switchMode(el.dataset.mode, false, { manual: act === 'offManual' });
-    }
   }
 
-  /** The mode's switch: every member on or off; `manual` also stops the automatic mode switching it on again. */
-  async _switchMode(mode, on, { manual = false } = {}) {
+  /** The mode's switch: every member on or off. */
+  async _switchMode(mode, on) {
     const ids = modeMembers(this._hass.states, this._registry(), mode)
       .filter((m) => !isAutoAlias(m.attributes?.friendly_name)).map((m) => m.entity_id);
     this._expect(ids, on); // before the busy redraw, so the switch stays where it was flipped to
     this._busy = mode;
     this._render(true);
     await this._flip(ids, on, () => setModeEnabled(this._h, this._registry(), mode, on));
-    if (manual) await this._run(() => disableAuto(this._h, mode));
     this._busy = null;
-    if (manual) await this._loadAuto();
     this._render(true);
   }
 
@@ -3151,14 +3126,6 @@ class ScheduleHelperShabbatCard extends CardBase {
     const d = e.target.dataset || {};
     const on = e.target.checked;
     if (d.master) {
-      // Off while the automatic mode would switch it on again: ask which is meant, instead of being overruled later.
-      const auto = this._auto?.[d.master];
-      if (!on && auto && this._hass.states[auto.entityId]?.state === 'on') {
-        this._offAsk = d.master;
-        this._render(true); // the switch goes back to on until answered
-        return;
-      }
-      this._offAsk = null;
       await this._switchMode(d.master, on);
     } else if (d.auto) {
       await this._flip([d.auto], on, () => setAutomationEnabled(this._h, d.auto, on));
@@ -3294,7 +3261,6 @@ const SHABBAT_STYLE = `
   .seg-opt input:disabled + span { opacity: .5; }
   .next-line { color: var(--primary-text-color); font-weight: 500; }
   .auto .warn { margin-top: 4px; }
-  .off-ask .actions { flex-wrap: wrap; }
   .start-line { margin-top: 4px; color: var(--secondary-text-color); }
   .start-panel { margin: 8px 0 0; }
   .start-panel .check { flex-wrap: wrap; }

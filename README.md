@@ -267,8 +267,8 @@ A mode is a Home Assistant **label**, named `שבת` or `חג`.
   available. Switching off in the middle of a range also turns that range's device off, the way the automation would
   at the range's end; an automation the card cannot read that from is named, and its device is left as it is.
 - **Manual or automatic.** Each mode is run by hand (*Manual*: only you switch it, nothing switches it on by itself)
-  or *Automatic*. The card says when an automatic mode comes on next. Switching an automatic mode off asks whether
-  that is **for now** (it comes on again next Friday, or next erev chag) or for good (**manual**).
+  or *Automatic*. The card says when an automatic mode comes on next. While a mode is automatic its switches are
+  locked, since the automatic mode would switch them back at its next start; choose *Manual* to switch it yourself.
 - **Automatic Shabbat** (optional). Creates one automation that:
   1. turns the Shabbat mode on every **Friday at 12:00**, before typical Friday-afternoon schedules begin. You can pick
      another time, or a number of hours before candle lighting (with Jewish Calendar);
