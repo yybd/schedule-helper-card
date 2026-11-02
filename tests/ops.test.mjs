@@ -6,7 +6,7 @@ import { FakeHass, slugify } from './fake-hass.mjs';
 import {
   WeekSchedule, listSchedules, createScheduleWithAutomation, updateSchedule, deleteSchedule, automationsFor,
   setAutomationEnabled, ensureLabel, setModeMembership, setModeEnabled, modeMembers, loadRegistry, findAutoShabbat,
-  enableAutoShabbat, disableAutoShabbat, isOurs, weekStatus, errorText, AUTO_SHABBAT_ALIAS, BEIT_MARKER,
+  enableAutoShabbat, disableAutoShabbat, isOurs, weekStatus, errorText, AUTO_SHABBAT_ALIAS, BEIT_MARKER, scheduleOffSteps,
 } from '../dist/schedule-helper-card.js';
 
 const NAMES = ['states', 'schedule_list', 'automation_configs', 'label_registry', 'entity_registry_display', 'area_registry', 'device_registry', 'yaml_schedules'];
@@ -167,6 +167,52 @@ test('setModeEnabled switches every member in one call', async () => {
   for (const m of modeMembers(hass.states, reg, 'שבת')) assert.equal(m.state, 'on');
   await setModeEnabled(hass, reg, 'שבת', false);
   for (const m of modeMembers(hass.states, reg, 'שבת')) assert.equal(m.state, 'off');
+});
+
+test('switching a mode off mid-range ends the ranges still running', async () => {
+  // Friday 17:00: the living-room AC (16:00–24:00) and the hot plate (15:00–24:00) are running.
+  const hass = new FakeHass(fixtures, { now: () => new Date(2026, 0, 9, 17, 0, 0) });
+  assert.equal(hass.states['schedule.living_room_ac_shabbat'].state, 'on');
+  const reg = await loadRegistry(hass);
+  const unclear = await setModeEnabled(hass, reg, 'שבת', false);
+  assert.deepEqual(unclear, []);
+  const services = hass.calls.filter((c) => c.kind === 'service').map((c) => `${c.domain}.${c.service} ${c.target.entity_id ?? c.data.entity_id ?? ''}`);
+  assert.equal(services[0].startsWith('automation.turn_off'), true);
+  // Ours and the hand-written fan both say what they do at the end; the bedroom AC is not running.
+  assert.ok(services.includes('climate.turn_off climate.living_room_ac'));
+  assert.ok(services.includes('switch.turn_off switch.night_light'));
+  assert.ok(!services.slice(1).some((s) => s.includes('bedroom')));
+  for (const m of modeMembers(hass.states, reg, 'שבת')) assert.equal(m.state, 'off');
+});
+
+test('switching one automation off mid-range ends its range; off outside a range touches nothing', async () => {
+  const friday = new FakeHass(fixtures, { now: () => new Date(2026, 0, 9, 17, 0, 0) });
+  assert.deepEqual(await setAutomationEnabled(friday, 'automation.beit_living_room_ac_shabbat', false), []);
+  assert.deepEqual(friday.calls.filter((c) => c.kind === 'service').map((c) => `${c.domain}.${c.service}`), ['automation.turn_off', 'climate.turn_off']);
+  const sunday = house();
+  await setAutomationEnabled(sunday, 'automation.beit_living_room_ac_shabbat', false);
+  assert.deepEqual(sunday.calls.filter((c) => c.kind === 'service').map((c) => `${c.domain}.${c.service}`), ['automation.turn_off']);
+});
+
+test('scheduleOffSteps reads both shapes, and gives up on what it cannot read', () => {
+  const s = 'schedule.x';
+  const byState = {
+    triggers: [{ trigger: 'state', entity_id: [s] }],
+    actions: [{ choose: [
+      { conditions: [{ condition: 'state', entity_id: s, state: 'on' }], sequence: [{ action: 'climate.set_hvac_mode', target: { entity_id: 'climate.a' }, data: { hvac_mode: 'cool' } }] },
+      { conditions: [{ condition: 'state', entity_id: s, state: 'off' }], sequence: [{ data: {}, target: { entity_id: 'climate.a' }, action: 'climate.turn_off' }] },
+    ] }],
+  };
+  assert.deepEqual(scheduleOffSteps(byState, s), [{ domain: 'climate', service: 'turn_off', data: {}, target: { entity_id: 'climate.a' } }]);
+  // Only "to on": nothing happens at the end.
+  assert.deepEqual(scheduleOffSteps({ triggers: [{ trigger: 'state', entity_id: [s], to: ['on'] }], actions: [] }, s), []);
+  const templated = structuredClone(byState);
+  templated.actions[0].choose[1].sequence[0].target.entity_id = '{{ x }}';
+  assert.equal(scheduleOffSteps(templated, s), null);
+  const delayed = structuredClone(byState);
+  delayed.actions[0].choose[1].sequence.push({ delay: '00:01:00' });
+  assert.equal(scheduleOffSteps(delayed, s), null);
+  assert.equal(scheduleOffSteps({ triggers: [{ trigger: 'state', entity_id: [s] }], actions: [{ action: 'switch.toggle' }] }, s), null);
 });
 
 // ---- automatic Shabbat ---------------------------------------------------------------------------------------------

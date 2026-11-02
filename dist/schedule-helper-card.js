@@ -233,6 +233,40 @@ export function schedulesIn(config, states = null) {
   return states ? ids.filter((id) => id in states) : ids;
 }
 
+const asList = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]);
+
+/**
+ * What an automation does when a schedule it follows turns off, as service calls `{domain, service, data, target}`:
+ * the `choose` branch picked by a trigger to "off" on that schedule, or by a condition that the schedule is off. The
+ * card's own shape and the common hand-written one both read this way. `[]` when nothing happens at the end (no
+ * trigger fires then); null when it cannot be read plainly (templates, waits, nested logic).
+ */
+export function scheduleOffSteps(config, scheduleEntityId) {
+  const onSchedule = (x) => asList(x?.entity_id).includes(scheduleEntityId);
+  const firesAtOff = asList(config?.triggers ?? config?.trigger)
+    .filter((t) => (t.trigger ?? t.platform) === 'state' && onSchedule(t) && (t.to == null || asList(t.to).includes('off')));
+  if (!firesAtOff.length) return [];
+  const offIds = firesAtOff.map((t) => t.id).filter((id) => id != null);
+  const picksOff = (c) => (c?.condition === 'trigger' && asList(c.id).some((id) => offIds.includes(id))) ||
+    (c?.condition === 'state' && onSchedule(c) && asList(c.state).includes('off'));
+  const actions = asList(config?.actions ?? config?.action);
+  if (actions.length !== 1 || !actions[0]?.choose) return null;
+  const branch = asList(actions[0].choose).find((o) => {
+    const conds = asList(o.conditions);
+    return conds.length === 1 && picksOff(conds[0]);
+  });
+  if (!branch) return null;
+  const steps = asList(branch.sequence);
+  if (JSON.stringify(steps).includes('{{')) return null;
+  const calls = [];
+  for (const s of steps) {
+    const [domain, service, ...rest] = String(s?.action ?? s?.service ?? '').split('.');
+    if (!domain || !service || rest.length || Object.keys(s).some((k) => !['action', 'service', 'data', 'target', 'alias'].includes(k))) return null;
+    calls.push({ domain, service, data: s.data || {}, target: s.target || {} });
+  }
+  return calls;
+}
+
 // ---------------------------------------------------------------------------- modes
 
 export const MODES = ['שבת', 'חג'];
@@ -703,8 +737,35 @@ export async function renameScheduleAutomations(hass, automationEntityIds, oldNa
   return renamed;
 }
 
-export const setAutomationEnabled = (hass, automationEntityId, enabled) =>
-  hass.callService('automation', enabled ? 'turn_on' : 'turn_off', {}, { entity_id: automationEntityId });
+/**
+ * Switches automations off, and ends each range still running: a schedule that is on would otherwise leave its device
+ * on, since the automation that turns it off at the end no longer runs. Returns the automations whose end could not
+ * be read (their devices may still be on).
+ */
+export async function turnOffAutomations(hass, automationEntityIds) {
+  const running = [];
+  for (const id of automationEntityIds) {
+    if (hass.states?.[id]?.state !== 'on') continue;
+    const config = await automationConfig(hass, id).catch(() => null);
+    const on = schedulesIn(config, hass.states).filter((s) => hass.states[s]?.state === 'on');
+    if (on.length) running.push({ id, config, schedules: on });
+  }
+  await hass.callService('automation', 'turn_off', {}, { entity_id: automationEntityIds });
+  const unclear = [];
+  for (const { id, config, schedules } of running) {
+    const steps = schedules.map((s) => scheduleOffSteps(config, s));
+    if (steps.some((x) => x === null)) {
+      unclear.push(id);
+      continue;
+    }
+    for (const c of steps.flat()) await hass.callService(c.domain, c.service, c.data, c.target);
+  }
+  return unclear;
+}
+
+export const setAutomationEnabled = (hass, automationEntityId, enabled) => (enabled
+  ? hass.callService('automation', 'turn_on', {}, { entity_id: automationEntityId }).then(() => [])
+  : turnOffAutomations(hass, [automationEntityId]));
 
 // ---- modes: an HA label names the automations (and schedules) of a mode ----
 
@@ -795,7 +856,9 @@ export async function alignWithMode(hass, labelName, automationIds) {
     } else on = state === 'on';
   }
   const change = automationIds.filter((id) => (hass.states?.[id]?.state === 'on') !== on);
-  if (change.length) await hass.callService('automation', on ? 'turn_on' : 'turn_off', {}, { entity_id: change });
+  if (!change.length) return;
+  if (on) await hass.callService('automation', 'turn_on', {}, { entity_id: change });
+  else await turnOffAutomations(hass, change);
 }
 
 /** Whether a home uses Shabbat or chag at all: a label named for either exists. */
@@ -804,8 +867,11 @@ export const hasModeLabels = (labels) => (labels || []).some((l) => MODES.includ
 /** Switches every automation of a mode on or off in one call. */
 export async function setModeEnabled(hass, registry, labelName, enabled) {
   const members = modeMembers(hass.states, registry, labelName).filter((m) => !isAutoAlias(m.attributes?.friendly_name));
-  if (!members.length) return;
-  await hass.callService('automation', enabled ? 'turn_on' : 'turn_off', {}, { entity_id: members.map((m) => m.entity_id) });
+  if (!members.length) return [];
+  const ids = members.map((m) => m.entity_id);
+  if (!enabled) return turnOffAutomations(hass, ids);
+  await hass.callService('automation', 'turn_on', {}, { entity_id: ids });
+  return [];
 }
 
 // ---- automatic modes ----
@@ -1136,6 +1202,7 @@ export const STRINGS = {
     modeEmpty: 'אין עדיין אוטומציות במצב הזה',
     modeOn: (n) => `פעיל — ${n} אוטומציות`,
     modeOff: 'כבוי',
+    leftRunning: (names) => `כובה, אבל לא ברור מה ${names} עושה בסוף הטווח, אז המכשיר שלה נשאר כפי שהוא. כבו אותו ידנית אם צריך.`,
     modePartial: (on, n) => `פעיל חלקית — ${on} מתוך ${n}`,
     modeSwitch: (m) => `הפעלת מצב ${m}`,
     scheduleList: 'תזמונים',
@@ -1285,6 +1352,7 @@ export const STRINGS = {
     modeEmpty: 'No automations in this mode yet',
     modeOn: (n) => `On — ${n} automations`,
     modeOff: 'Off',
+    leftRunning: (names) => `Switched off, but it is not clear what ${names} does at the end of its range, so its device was left as it is. Turn it off by hand if needed.`,
     modePartial: (on, n) => `Partly on — ${on} of ${n}`,
     modeSwitch: (m) => `${m} mode`,
     scheduleList: 'Schedules',
@@ -1500,7 +1568,8 @@ class CardBase extends Base {
   async _flip(ids, on, call) {
     this._expect(ids, on);
     const ok = await this._run(async () => {
-      await call();
+      const unclear = await call();
+      if (unclear?.length) this._toast(this._t.leftRunning(unclear.map((id) => entityName(this._hass.states[id])).join(', ')), 12000);
       return true;
     });
     if (!ok) this._forget(ids);

@@ -93,6 +93,12 @@ Written with `POST /api/config/automation/config/<id>`. From a card this is `has
   - "on" when every member is on;
   - "partial" when some are;
   - "off" when none are.
+- **Switching automations off mid-range** (a mode, or one automation): a schedule they follow that is on now would
+  leave its device on, since nothing runs at the end of the range any more. So, after `automation.turn_off`, the
+  steps the automation runs when that schedule turns off are called directly: the `choose` branch picked by a trigger
+  to `off` on the schedule (the shape above), or by a `state` condition that the schedule is `off` (a common
+  hand-written shape). Only plain action calls, no templates; an automation that cannot be read this way is left as
+  it is and named to the user. *(Card 2.3.1; the Beit app does not do this yet, to be aligned.)*
 - **Automatic Shabbat.** One automation, alias `Beit · מצב שבת אוטומטי`, carrying the marker:
   - Fridays at 12:00 it turns the label on. That is before typical Friday-afternoon schedules; candle lighting is too late.
     The start trigger (`id: erev_shabbat`) may instead be a time of day `HH:MM:00`, or
