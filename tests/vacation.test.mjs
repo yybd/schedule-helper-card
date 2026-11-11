@@ -199,8 +199,9 @@ test('the first automation to join an empty vacation mode is switched off, unles
   assert.equal(hass.states[id].state, 'on');
 });
 
-test('the dashboard the card creates holds the Schedules and Modes cards', () => {
+test('the dashboard the card creates holds the Schedules and Modes cards; Shabbat and chag only where the home uses them', () => {
   assert.deepEqual(dashboardConfig().views[0].cards, [{ type: 'custom:schedule-helper-card' }, { type: 'custom:schedule-helper-modes-card' }]);
+  assert.deepEqual(dashboardConfig({ jewish: true }).views[0].cards[1], { type: 'custom:schedule-helper-modes-card', modes: ['vacation', 'שבת', 'חג'] });
 });
 
 // ---- Music Assistant: its players are ordinary media_player entities ------------------------------------------------

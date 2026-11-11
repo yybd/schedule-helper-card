@@ -1199,10 +1199,15 @@ export const DASHBOARD = { url_path: 'schedule-helper', view: 'schedules', title
 // Where the dashboard lived before the card was renamed (1.2.x): found too, so it is never made twice.
 const LEGACY_DASHBOARD_PATHS = ['beit-schedules'];
 
-export function dashboardConfig() {
+/**
+ * The new dashboard's content. The Modes card shows vacation by default; in a home that keeps Shabbat and chag (`jewish`)
+ * it is set to show them too.
+ */
+export function dashboardConfig({ jewish = false } = {}) {
+  const modes = { type: 'custom:schedule-helper-modes-card', ...(jewish ? { modes: [...MODES] } : {}) };
   return {
     title: DASHBOARD.title,
-    views: [{ title: DASHBOARD.title, path: DASHBOARD.view, cards: [{ type: 'custom:schedule-helper-card' }, { type: 'custom:schedule-helper-modes-card' }] }],
+    views: [{ title: DASHBOARD.title, path: DASHBOARD.view, cards: [{ type: 'custom:schedule-helper-card' }, modes] }],
   };
 }
 
@@ -1229,7 +1234,9 @@ export async function createDashboard(hass) {
     mode: 'storage',
   });
   try {
-    await hass.callWS({ type: 'lovelace/config/save', url_path: DASHBOARD.url_path, config: dashboardConfig() });
+    const labels = await hass.callWS({ type: 'config/label_registry/list' }).catch(() => []);
+    const config = dashboardConfig({ jewish: keepsJewishModes(labels, hass.states) });
+    await hass.callWS({ type: 'lovelace/config/save', url_path: DASHBOARD.url_path, config });
   } catch (err) {
     await hass.callWS({ type: 'lovelace/dashboards/delete', dashboard_id: created.id }).catch(() => {});
     throw err;
@@ -3092,16 +3099,16 @@ export function calendarRows(states, cal, lang = 'en', now = new Date()) {
  */
 class ScheduleHelperModesCard extends CardBase {
   static getStubConfig() {
-    return { show_calendar: true };
+    return {};
   }
 
   static getConfigElement() {
     return document.createElement('schedule-helper-modes-card-editor');
   }
 
-  /** The modes shown when the config names none. */
+  /** The modes shown when the config names none: vacation. Shabbat and chag are added with `modes`. */
   _defaultModes() {
-    return ['vacation', ...(keepsJewishModes(this._labels, this._hass?.states) ? JEWISH_MODES : [])];
+    return ['vacation'];
   }
 
   get _defaultTitle() {
@@ -3894,24 +3901,9 @@ class ScheduleHelperCardEditor extends EditorBase {
 }
 
 class ScheduleHelperModesCardEditor extends EditorBase {
-  set hass(hass) {
-    const first = !this._hass;
-    super.hass = hass;
-    if (first) {
-      // The modes shown when the config names none: vacation, and Shabbat and chag where the home uses them.
-      hass.callWS({ type: 'config/label_registry/list' }).then((labels) => {
-        this._jewishInHome = keepsJewishModes(labels, hass.states);
-        this._render();
-      }, () => {});
-    }
-  }
-
-  get hass() {
-    return this._hass;
-  }
-
+  /** The modes shown when the config names none (the card's own default). */
   _defaultModes() {
-    return ['vacation', ...(this._jewishInHome ? JEWISH_MODES : [])];
+    return ['vacation'];
   }
 
   get _defaultTitle() {
@@ -3928,21 +3920,25 @@ class ScheduleHelperModesCardEditor extends EditorBase {
         <h3>${esc(t.edGeneral)}</h3>
         <label class="field"><span>${esc(t.edTitle)}</span><input data-key="title" value="${esc(c.title ?? '')}" placeholder="${esc(this._defaultTitle)}"></label>
         <label class="field"><span>${esc(t.edHeight)}</span><input data-key="height" value="${esc(c.height ?? '')}" placeholder="${esc(t.edHeightHint)}"></label>
-        <label class="chk"><input type="checkbox" data-bool="show_calendar" ${c.show_calendar !== false ? 'checked' : ''}><span>${esc(t.edShowCalendar)}</span></label>
       </section>
       <section>
         <h3>${esc(t.edModes)}</h3>
         ${MODES.map((m) => `<label class="chk"><input type="checkbox" data-mode="${esc(m)}" ${modes.includes(m) ? 'checked' : ''}><span>${esc(t.modeTitle(t.modeName[m]))}</span></label>`).join('')}
+        ${modes.some((m) => JEWISH_MODES.includes(m)) ? `<label class="chk"><input type="checkbox" data-bool="show_calendar" ${c.show_calendar !== false ? 'checked' : ''}><span>${esc(t.edShowCalendar)}</span></label>` : ''}
       </section>`);
     this._fields(root);
-    root.querySelector('[data-bool]').addEventListener('change', (e) => {
+    root.querySelector('[data-bool]')?.addEventListener('change', (e) => {
       const config = { ...this._config, show_calendar: e.target.checked };
       if (e.target.checked) delete config.show_calendar;
       this._emit(config);
     });
     root.querySelectorAll('[data-mode]').forEach((el) => el.addEventListener('change', () => {
       const chosen = [...root.querySelectorAll('[data-mode]')].filter((b) => b.checked).map((b) => b.dataset.mode);
-      this._emit({ ...this._config, modes: chosen });
+      const config = { ...this._config, modes: chosen };
+      // The default needs no line in the YAML.
+      if (chosen.join() === this._defaultModes().join()) delete config.modes;
+      this._emit(config);
+      this._render(); // the calendar option follows Shabbat and chag
     }));
   }
 }

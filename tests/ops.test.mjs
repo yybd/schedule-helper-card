@@ -569,7 +569,9 @@ test('createDashboard makes one new dashboard with both cards, and only once', a
   assert.equal(r.url_path, 'schedule-helper');
   const cfg = await hass.callWS({ type: 'lovelace/config', url_path: 'schedule-helper' });
   assert.deepEqual(cfg.views[0].cards.map((c) => c.type), ['custom:schedule-helper-card', 'custom:schedule-helper-modes-card']);
-  assert.deepEqual(cfg, dashboardConfig());
+  // This house keeps Shabbat and chag: the Modes card is set to show them next to vacation.
+  assert.deepEqual(cfg, dashboardConfig({ jewish: true }));
+  assert.deepEqual(cfg.views[0].cards[1].modes, ['vacation', 'שבת', 'חג']);
   const again = await createDashboard(hass);
   assert.equal(again.created, false);
   assert.equal(hass.calls.filter((c) => c.type === 'lovelace/dashboards/create').length, 1);

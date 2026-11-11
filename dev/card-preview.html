@@ -73,7 +73,8 @@
 
   const log = (m) => { const el = document.getElementById('log'); el.textContent = m + '\n' + el.textContent; };
   const cards = [document.getElementById('schedules'), document.getElementById('shabbat')];
-  const configs = [JSON.parse(q.get('schedules') || '{}'), JSON.parse(q.get('shabbat') || '{}')];
+  // The Modes card shows vacation alone by default; the preview's house keeps Shabbat and chag, so it shows all three.
+  const configs = [JSON.parse(q.get('schedules') || '{}'), { modes: ['vacation', 'שבת', 'חג'], ...JSON.parse(q.get('shabbat') || '{}') }];
   const editors = [];
   let source;
   if (live) {

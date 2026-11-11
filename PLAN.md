@@ -205,8 +205,9 @@ One automation, alias `Beit · Automatic vacation`, carrying the marker, created
 ### The cards
 
 - New card type **`custom:schedule-helper-modes-card`** ("Modes"), offered in the card picker. Default `modes`:
-  vacation, plus Shabbat and chag in a home that has their labels or a Jewish calendar. The Jewish calendar block is
-  drawn only above the Shabbat/chag sections.
+  vacation only. Shabbat and chag are added in its settings (`modes`, or ticked in the visual editor, where the
+  calendar option appears once one of them is ticked). The Jewish calendar block is drawn only above the Shabbat/chag
+  sections. *(Changed in 2.5.1: in 2.5.0 the default added Shabbat and chag by itself in a home that uses them.)*
 - `custom:schedule-helper-shabbat-card` (and `beit-shabbat-card`) keep working exactly as before: same class, default
   modes Shabbat and chag, same title. No longer offered in the picker.
 - Schedules card: the mode choice in the editor is *Regular / Vacation*, plus Shabbat and chag where the home uses

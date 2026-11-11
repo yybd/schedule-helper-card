@@ -54,7 +54,7 @@ The package contains **two separate cards**. Add one or both; each works on its 
 | | Card | What it is for |
 |:-:|---|---|
 | 🗓️ | **Schedules**<br>`custom:schedule-helper-card`<br>*the main card* | **Setting up schedules.** Create and edit a weekly schedule for any device (air conditioner, heating, lights, water heater, plugs, blinds, speakers): the hours for each day, what the device does, and the mode it belongs to (regular, vacation, and Shabbat or chag where your home uses them). |
-| ✈️ | **Modes**<br>`custom:schedule-helper-modes-card` | **Switching groups of schedules.** Vacation first: switch it on by hand, or give it the dates of your trip. Then, in homes that keep them, Shabbat and chag, with automatic Shabbat and chag and the candle lighting, havdalah and parasha. |
+| ✈️ | **Modes**<br>`custom:schedule-helper-modes-card` | **Switching groups of schedules.** By default it shows vacation: switch it on by hand, or give it the dates of your trip. Add Shabbat and chag in its settings if your home keeps them: automatic Shabbat and chag, and the candle lighting, havdalah and parasha. |
 
 The Shabbat card of earlier versions, `custom:schedule-helper-shabbat-card`, still works: it is the Modes card showing
 Shabbat and chag only.
@@ -78,7 +78,8 @@ Shabbat and chag only.
   the mode is fully on, partly on or off.
 - **Automatic vacation.** Pick the dates and times you leave and come back. The mode switches on then, and off when
   you are back, once every vacation schedule has finished; afterwards it is back to manual by itself.
-- **Shabbat and chag modes** (optional, for homes that keep them): the same switches, one per mode.
+- **Shabbat and chag modes** (optional, for homes that keep them): tick them in the card's settings, and the card shows
+  the same switches for each, below vacation.
 - **Automatic Shabbat and chag.** Switches the mode on before its schedules begin (at a time you choose, or some hours
   before candle lighting) and off after it ends, only once every schedule of the mode has finished, so no device is
   left running.
@@ -258,14 +259,14 @@ entities:                  # optional: show only these schedules
 
 ```yaml
 type: custom:schedule-helper-modes-card
-modes: [vacation, שבת, חג] # optional
+modes: [vacation, שבת, חג] # optional: add Shabbat and chag (default: vacation only)
 show_calendar: true        # optional
 ```
 
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `title` | string | *Modes* | Card title. The default follows the user's language (`מצבים` in Hebrew). |
-| `modes` | list | automatic | Which modes to show, in this order: `vacation`, `שבת` (or `shabbat`), `חג` (or `chag`). Unset: vacation, plus Shabbat and chag in a home that uses them. |
+| `modes` | list | automatic | Which modes to show, in this order: `vacation`, `שבת` (or `shabbat`), `חג` (or `chag`). Unset: vacation only. In the visual editor, tick the modes to show. |
 | `height` | string | up to `700px` | A fixed height, such as `500px` or `60vh`. The title stays put and the rest scrolls inside the card. Unset, the card grows with its content up to 700px; `auto` removes the limit. |
 | `show_calendar` | boolean | `true` | Show candle lighting, havdalah, the parasha and the holiday, above the Shabbat section. |
 
@@ -316,8 +317,9 @@ the mode is on. Every other schedule goes on as usual.
 
 ### Shabbat and Jewish holiday (chag) modes
 
-For homes that keep them. They appear in the Modes card, and as a choice in the schedule editor, once your home has a
-`שבת` or `חג` label or a Jewish calendar integration.
+For homes that keep them. To show them in the Modes card, tick them in its settings (or set `modes: [vacation, שבת,
+חג]`); the *Schedule Helper* dashboard the card creates does this for you in a home that already uses them. In the
+schedule editor they are offered once your home has a `שבת` or `חג` label or a Jewish calendar integration.
 
 - **Automatic Shabbat** (optional). Creates one automation that:
   1. turns the Shabbat mode on every **Friday at 12:00**, before typical Friday-afternoon schedules begin. You can pick

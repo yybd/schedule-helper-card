@@ -145,7 +145,9 @@ chag are the ones a Jewish calendar times.
 
 On request (a button in either card's visual editor, admins only) the card creates one new storage dashboard:
 `lovelace/dashboards/create {url_path: "schedule-helper", title: "Schedule Helper", icon: "mdi:calendar-clock", show_in_sidebar: true,
-require_admin: false, mode: "storage"}`, then `lovelace/config/save` with one view holding `custom:schedule-helper-card` and `custom:schedule-helper-modes-card` (2.5; before, the Shabbat card). If a dashboard with
+require_admin: false, mode: "storage"}`, then `lovelace/config/save` with one view holding `custom:schedule-helper-card` and `custom:schedule-helper-modes-card` (2.5; before, the Shabbat card).
+The Modes card gets `modes: [vacation, שבת, חג]` in a home that has a `שבת` or `חג` label or a Jewish calendar; otherwise
+it has no `modes` (vacation only). If a dashboard with
 that `url_path` exists, nothing is written. If the save fails, the new dashboard is deleted again
 (`lovelace/dashboards/delete {dashboard_id}`). No existing dashboard is ever changed. A dashboard at `beit-schedules` (the address before 2.0) counts as
 existing too.

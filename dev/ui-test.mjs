@@ -654,6 +654,36 @@ const CHECKS = [
     must(!window.customCards.some((c) => c.type === 'schedule-helper-shabbat-card'), 'Shabbat card no longer offered');
     el.remove();
   `],
+  ['the Modes card shows vacation alone by default; Shabbat and chag are ticked on in its editor', '', `
+    const card = document.createElement('schedule-helper-modes-card');
+    card.setConfig({});
+    document.body.appendChild(card);
+    card.hass = fake.snapshot();
+    await sleep(500);
+    must([...card.shadowRoot.querySelectorAll('.mode')].map((m) => m.classList[1]).join() === 'vacation', 'vacation only, even in a home with Shabbat');
+    must(!card.shadowRoot.querySelector('.cal'), 'no calendar');
+    const ed = document.createElement('schedule-helper-modes-card-editor');
+    ed.hass = fake.snapshot();
+    ed.setConfig({});
+    document.body.appendChild(ed);
+    let emitted = null;
+    ed.addEventListener('config-changed', (e) => { emitted = e.detail.config; card.setConfig(emitted); ed.setConfig(emitted); });
+    await sleep(200);
+    const box = (m) => ed.shadowRoot.querySelector('[data-mode="' + m + '"]');
+    must(box('vacation').checked && !box('שבת').checked && !box('חג').checked, 'editor: vacation only');
+    must(!ed.shadowRoot.querySelector('[data-bool=show_calendar]'), 'no calendar option yet');
+    toggle(box('שבת'), true, 'Shabbat on');
+    await sleep(500);
+    must(JSON.stringify(emitted.modes) === JSON.stringify(['vacation', 'שבת']), 'config ' + JSON.stringify(emitted));
+    must([...card.shadowRoot.querySelectorAll('.mode')].map((m) => m.classList[1]).join() === 'vacation,shabbat', 'card follows');
+    must(card.shadowRoot.querySelector('.cal'), 'calendar above Shabbat');
+    must(ed.shadowRoot.querySelector('[data-bool=show_calendar]'), 'calendar option appears');
+    toggle(box('שבת'), false, 'Shabbat off');
+    await sleep(300);
+    must(!('modes' in emitted), 'back to the default: no modes line');
+    card.remove();
+    ed.remove();
+  `],
   ['the Modes card editor lists vacation first; unticking writes the list', 'editors=1', `
     const ed = document.querySelectorAll('ha-card > *')[1];
     await sleep(300);
