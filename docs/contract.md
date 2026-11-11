@@ -1,11 +1,13 @@
-# The data contract shared with the Beit app
+# The data contract shared with the Homi app (formerly Beit)
 
 The card and the Beit native app (`../app`, Flutter) edit **the same HA objects**. Anything one creates, the other
 must read and be able to edit or delete. Change this contract in both places or not at all.
 
-The Dart that implements it today lives in the Beit app: `lib/ha/schedule.dart` (week model, automation builder,
-marker), `test/schedule_test.dart` (cases to port 1:1), `lib/store/home_store.dart` (every HA call and its order),
-`lib/ui/schedule_editor.dart` and `lib/ui/shabbat_screen.dart` (the UI this card mirrors).
+The Dart that implements it lives in the Homi app (formerly Beit): `lib/ha/schedule.dart` (week model, schedule
+automation, reading it back, the steps that end a range), `lib/ha/modes.dart` (modes, calendar, the automatic
+automations, vacation) and `lib/store/home_store.dart` (every HA call, in the card's order). Since card 2.5 the app is
+checked against this card's own code: `tool/card_golden.mjs` runs the card's builders on a set of inputs, and
+`test/modes_test.dart` compares the Dart output with them case by case.
 
 ## 1. Schedules
 
@@ -90,11 +92,11 @@ chag are the ones a Jewish calendar times.
   mode: joining a mode that is on or off switches them to match; leaving every mode switches them on.
   - Joining an **empty** mode (no other member) follows the calendar instead: off when the mode is over and not about
     to begin (the facts below, under *Catch-up*), on otherwise. Without a readable calendar they are left as they are.
-    *(Card 2.0.2. The Beit app still leaves them as they are; to be aligned.)*
+    *(Card 2.0.2; the Homi app too since card 2.5.)*
   - For **chag**, Jewish Calendar's `issur_melacha_in_effect*` and `erev_shabbat_hag*` are on every Shabbat too. A
     plain Shabbat counts as outside chag: issur is on and `upcoming_havdalah*` equals `upcoming_shabbat_havdalah*`, or
     erev is on and `upcoming_candle_lighting*` equals `upcoming_shabbat_candle_lighting*`. *(Card 2.4; only this join
-    check. The catch-up template below is unchanged, and the Beit app does not make this distinction yet.)*
+    check. The catch-up template below is unchanged. The Homi app makes the same distinction.)*
 - **Taking an automation out of a mode** also takes out the schedules its config refers to, except those another
   automation of the mode still refers to.
 - **Switching a mode:** `automation.turn_on` / `automation.turn_off` with target `{label_id}`, or with the member list. The switch shows:
@@ -106,7 +108,7 @@ chag are the ones a Jewish calendar times.
   steps the automation runs when that schedule turns off are called directly: the `choose` branch picked by a trigger
   to `off` on the schedule (the shape above), or by a `state` condition that the schedule is `off` (a common
   hand-written shape). Only plain action calls, no templates; an automation that cannot be read this way is left as
-  it is and named to the user. *(Card 2.4; the Beit app does not do this yet, to be aligned.)*
+  it is and named to the user. *(Card 2.4; the Homi app too.)*
 - **Automatic Shabbat.** One automation, alias `Beit · מצב שבת אוטומטי`, carrying the marker:
   - Fridays at 12:00 it turns the label on. That is before typical Friday-afternoon schedules; candle lighting is too late.
     The start trigger (`id: erev_shabbat`) may instead be a time of day `HH:MM:00`, or
@@ -114,7 +116,7 @@ chag are the ones a Jewish calendar times.
     `weekday: [fri]` condition stays. Changing the start replaces only that trigger (and the description while it is
     still the one the card wrote).
   - When Shabbat ends (see §4), it waits until every `schedule.*` carrying the label is off (6 h timeout), then turns the label off with `stop_actions: false`.
-  - **Catch-up after a restart** *(card 2.0.2; the Beit app does not write it yet, to be aligned)*. A restart drops a
+  - **Catch-up after a restart** *(card 2.0.2; the Homi app writes and upgrades it too)*. A restart drops a
     run that is waiting for the schedules, and an end that comes while HA is down never fires, so the mode would stay
     on all week. A third trigger `{trigger: "homeassistant", event: "start", id: "ha_start"}` and a third `choose`
     branch for it:
@@ -139,7 +141,7 @@ chag are the ones a Jewish calendar times.
   - End trigger `id: motzei_chag`: `issur_melacha_in_effect*` from `on` to `off`, then the same wait and turn-off as Shabbat.
   - A chag that falls on Shabbat alone is covered by Shabbat mode.
   - Neither automatic automation is ever a member of a mode: it would switch itself off.
-  - The Beit app does not create automatic chag yet; it sees it as an ordinary automation carrying the marker.
+  - The Homi app creates and switches automatic chag the same way.
 
 ## 3a. The Schedule Helper dashboard
 
@@ -154,8 +156,7 @@ existing too.
 
 ## 3b. Vacation
 
-*(Card 2.5. The Beit app does not know the vacation mode yet: it sees its label as an ordinary label and the automatic
-automation as an ordinary automation carrying the marker. To be aligned.)*
+*(Card 2.5. The Homi app has it too: vacation is always shown there, Shabbat and chag only when turned on.)*
 
 - Membership, the switch, switching off mid-range and moving a schedule between modes are §3 unchanged.
 - **Joining an empty vacation mode:** off, unless an automatic vacation that is switched on says the trip is on now.
