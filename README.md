@@ -98,7 +98,7 @@ Hebrew, the cards are in Hebrew and the whole layout is right to left.
 
 | Editing a schedule | A new schedule for an air conditioner |
 |:-:|:-:|
-| <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/editor.png" alt="The editor: name, Shabbat mode, the automations it drives and the week" width="380"> | <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/new-schedule.png" alt="A new schedule: the device, HVAC mode, temperature and turn off at the end" width="380"> |
+| <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/editor.png" alt="The editor: name, the mode (regular, vacation, Shabbat, chag), the automation it drives and the week" width="380"> | <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/new-schedule.png" alt="A new schedule: the device, HVAC mode, temperature and turn off at the end" width="380"> |
 
 | Dark theme, fixed height | On a phone |
 |:-:|:-:|
@@ -289,8 +289,14 @@ differs.
   or *Automatic*. The card says when an automatic mode comes on next. While a mode is automatic its switches are
   locked, here and in the schedule editor, since the automatic mode would switch them back at its next start; choose
   *Manual* to switch it yourself (any user can, once the automatic mode exists).
-  - Choosing *Automatic* puts the switches where the calendar says: off during the week, on during the mode.
+  - Choosing *Automatic* puts the switches where the mode's dates (or the calendar) say: off outside the mode, on
+    during it.
   - A mode left on while *Manual* does not switch off by itself; the card says so.
+  - Going back to *Manual* disables the automatic automation. It is never deleted, so changes you made to it in Home
+    Assistant survive.
+- **Each mode switches off only once its schedules have finished** (at most 6 hours later), so no device is cut off
+  in the middle of a range.
+
 ### Vacation
 
 The schedules you want only while you are away: lights in the evening, the water heater on the morning you come
@@ -321,12 +327,10 @@ For homes that keep them. They appear in the Modes card, and as a choice in the 
 - **Automatic chag** (optional, needs the core Jewish Calendar integration). The same for chag mode: on erev chag at
   the time you choose, off after the chag ends. A chag that falls on Shabbat is covered by Shabbat mode, since nothing
   in the calendar says so a day ahead.
-- **Going back to manual** disables its automation. It is never deleted, so changes you made to it in Home
-  Assistant survive.
 - **A schedule that starts too early.** A Shabbat range that begins on Friday before the mode comes on does not run:
   its automation is still off when the range begins. The card names such schedules under *Automatic*.
 
-### A typical week with automatic Shabbat
+#### A typical week with automatic Shabbat
 
 The automatic mode never switches a device itself. It switches the mode's **automations** on and off, and each
 automation switches its device by its own schedule.
@@ -340,7 +344,7 @@ automation switches its device by its own schedule.
 
 Automatic chag works the same way, from erev chag to the end of the chag.
 
-### Setting up Jewish Calendar
+#### Setting up Jewish Calendar
 
 Jewish Calendar is part of Home Assistant, so there is nothing to download, but it has to be added once. The card
 cannot add it for you; when it is missing, the Modes card shows a link to add it (for administrators).

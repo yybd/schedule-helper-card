@@ -94,6 +94,15 @@
     setInterval(() => { for (; seen < fake.calls.length; seen++) log(JSON.stringify(fake.calls[seen])); }, 300);
     setInterval(() => { fake.tick(); push(); }, 60000);
     fake.onChange(() => push());
+    // ?demo=vacation: the balcony light in vacation mode, with an automatic vacation in ten days (for the screenshots).
+    if (q.get('demo') === 'vacation') {
+      const m = await import('../dist/schedule-helper-card.js');
+      const ids = ['schedule.balcony_light', 'automation.balcony_light_evening'];
+      await m.setModeMembership(fake, 'vacation', ids, true);
+      const at = (days, hour) => { const d = new Date(); d.setDate(d.getDate() + days); d.setHours(hour, 0, 0, 0); return m.localStamp(d); };
+      await m.enableAuto(fake, 'vacation', { range: { from: at(10, 8), to: at(17, 18) } });
+      await fake.callService('automation', 'turn_off', {}, { entity_id: [ids[1]] }); // off until the trip, as the card would
+    }
   }
 
   // HA calls setConfig more than once, and sets hass before and after: do the same here.
