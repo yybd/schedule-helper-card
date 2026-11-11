@@ -97,9 +97,9 @@ Shabbat and chag only.
 All screenshots use the invented house in `tests/fixtures`, in English. For a user whose Home Assistant language is
 Hebrew, the cards are in Hebrew and the whole layout is right to left.
 
-| The Modes card as it comes: vacation | With Shabbat added in its settings |
+| The Modes card as it comes: vacation | Optional: Shabbat mode, added in the card's settings |
 |:-:|:-:|
-| <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/card.png" alt="The Schedules card and the Modes card with vacation mode only, set to an automatic vacation" width="440"> | <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/modes-shabbat.png" alt="The Modes card with vacation and Shabbat mode, and the Jewish calendar times above Shabbat" width="260"> |
+| <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/card.png" alt="The Schedules card and the Modes card with vacation mode only, set to an automatic vacation" width="440"> | <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/modes-shabbat.png" alt="Optional: the Modes card with vacation and automatic Shabbat mode, and the Jewish calendar times above Shabbat" width="260"> |
 
 | Editing a schedule | A new schedule for an air conditioner |
 |:-:|:-:|
@@ -321,7 +321,12 @@ the mode is on. Every other schedule goes on as usual.
 
 ### Shabbat and Jewish holiday (chag) modes
 
-For homes that keep them ([how it looks](https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/modes-shabbat.png)).
+> **Optional.** For homes that keep Shabbat and the Jewish holidays. The Modes card shows them only once you add them
+> in its settings, and everything else works without them.
+
+<p align="center"><img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/modes-shabbat.png" alt="Optional: the Modes card with Shabbat mode added below vacation, set to automatic Shabbat, with candle lighting, havdalah and the parasha" width="320"><br>
+<i>Optional: Shabbat mode added to the Modes card, here with automatic Shabbat.</i></p>
+
 To show them in the Modes card, tick them in its settings (or set `modes: [vacation, שבת,
 חג]`); the *Schedule Helper* dashboard the card creates does this for you in a home that already uses them. In the
 schedule editor they are offered once your home has a `שבת` or `חג` label or a Jewish calendar integration.
