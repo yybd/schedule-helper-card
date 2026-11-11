@@ -15,7 +15,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/yybd/schedule-helper-card" alt="License"></a>
 </p>
 
-<p align="center"><img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/card.png" alt="The Schedules card and the Modes card" width="760"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/card.png" alt="The Schedules card and the Modes card, with vacation mode (the default)" width="760"></p>
 
 ---
 
@@ -97,13 +97,17 @@ Shabbat and chag only.
 All screenshots use the invented house in `tests/fixtures`, in English. For a user whose Home Assistant language is
 Hebrew, the cards are in Hebrew and the whole layout is right to left.
 
+| The Modes card as it comes: vacation | With Shabbat added in its settings |
+|:-:|:-:|
+| <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/card.png" alt="The Schedules card and the Modes card with vacation mode only, set to an automatic vacation" width="440"> | <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/modes-shabbat.png" alt="The Modes card with vacation and Shabbat mode, and the Jewish calendar times above Shabbat" width="260"> |
+
 | Editing a schedule | A new schedule for an air conditioner |
 |:-:|:-:|
 | <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/editor.png" alt="The editor: name, the mode (regular, vacation, Shabbat, chag), the automation it drives and the week" width="380"> | <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/new-schedule.png" alt="A new schedule: the device, HVAC mode, temperature and turn off at the end" width="380"> |
 
 | Dark theme, fixed height | On a phone |
 |:-:|:-:|
-| <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/dark-english.png" alt="Both cards with a dark theme and a fixed height" width="440"> | <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/mobile.png" alt="The editor full screen on a phone" width="220"> |
+| <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/dark-english.png" alt="Both cards with a dark theme and a fixed height, vacation mode only" width="440"> | <img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/mobile.png" alt="The editor full screen on a phone" width="220"> |
 
 ## Why Schedule Helper Card
 
@@ -317,7 +321,8 @@ the mode is on. Every other schedule goes on as usual.
 
 ### Shabbat and Jewish holiday (chag) modes
 
-For homes that keep them. To show them in the Modes card, tick them in its settings (or set `modes: [vacation, שבת,
+For homes that keep them ([how it looks](https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/modes-shabbat.png)).
+To show them in the Modes card, tick them in its settings (or set `modes: [vacation, שבת,
 חג]`); the *Schedule Helper* dashboard the card creates does this for you in a home that already uses them. In the
 schedule editor they are offered once your home has a `שבת` or `חג` label or a Jewish calendar integration.
 
