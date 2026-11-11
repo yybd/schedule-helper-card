@@ -568,7 +568,7 @@ test('createDashboard makes one new dashboard with both cards, and only once', a
   assert.equal(r.created, true);
   assert.equal(r.url_path, 'schedule-helper');
   const cfg = await hass.callWS({ type: 'lovelace/config', url_path: 'schedule-helper' });
-  assert.deepEqual(cfg.views[0].cards.map((c) => c.type), ['custom:schedule-helper-card', 'custom:schedule-helper-shabbat-card']);
+  assert.deepEqual(cfg.views[0].cards.map((c) => c.type), ['custom:schedule-helper-card', 'custom:schedule-helper-modes-card']);
   assert.deepEqual(cfg, dashboardConfig());
   const again = await createDashboard(hass);
   assert.equal(again.created, false);

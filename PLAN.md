@@ -2,6 +2,9 @@
 
 > Renamed in 2.0: the card is now **Schedule Helper Card** (`dist/schedule-helper-card.js`, `custom:schedule-helper-card`,
 > `custom:schedule-helper-shabbat-card`). This plan keeps the 1.0 names it was written with.
+>
+> 2.5 made the modes general, with **vacation** first and Shabbat/chag as particular cases: see
+> [Modes — vacation first](#25--modes-vacation-first) at the end.
 
 The goal is a HACS dashboard plugin, one file `dist/beit-schedule-card.js`, that registers two cards,
 `beit-schedule-card` and `beit-shabbat-card`. It does everything the README promises and follows the data contract in
@@ -155,3 +158,70 @@ Each phase ends with passing tests and **one commit**.
 - Automatic chag mode.
 - Editing YAML schedules.
 - Submitting to the HACS default list. That is a PR to `hacs/default`; ask the owner first.
+
+## 2.5 · Modes: vacation first
+
+The card is meant for any home, so the idea it is built around is a **mode**, not Shabbat. A mode is a set of
+automations (and the schedules they follow) that are switched on together for a stretch of time and off again after
+it. **Vacation** is the mode every home has, so it comes first. **Shabbat** and **chag** are the same thing with a
+Jewish calendar deciding the stretch.
+
+### What a mode is (one definition, three instances)
+
+| | Vacation | Shabbat | Chag |
+|---|---|---|---|
+| Key (config, code) | `vacation` | `שבת` (`shabbat` accepted) | `חג` (`chag` accepted) |
+| HA label, found by name | `Vacation` or `חופשה` (created in the user's language) | `שבת` | `חג` |
+| Label icon / colour | `mdi:airplane` / `teal` | `mdi:candle` / `amber` | `mdi:star-david` / `indigo` |
+| The stretch | dates the user picks | Friday → after havdalah | erev chag → after the chag |
+| Automatic needs | nothing | a Jewish calendar | Jewish Calendar |
+| Shown by default | always | when the home has the label or a Jewish calendar | same |
+
+Everything mode-shaped (membership, the master switch, switching off mid-range, the lock while automatic, joining an
+empty mode) works the same for all three. Only the automatic automation differs.
+
+- `MODE_DEFS` holds the table; `MODES = ['vacation', 'שבת', 'חג']`, `JEWISH_MODES = ['שבת', 'חג']`; `modeKey()`
+  normalises what a config says; `modeLabel(registry, mode)` finds the label by any of its names. Every call that
+  looked a label up by `name === mode` goes through it.
+- Members are **on during the stretch and off outside it**, as for Shabbat. ("Pause the regular schedules while away"
+  is the opposite membership and is out of scope here; a follow-up.)
+
+### Automatic vacation
+
+One automation, alias `Beit · Automatic vacation`, carrying the marker, created when the user picks dates:
+
+- `variables: {vacation_from: "YYYY-MM-DD HH:MM", vacation_to: "YYYY-MM-DD HH:MM"}` (local time of HA);
+- triggers: a `time` trigger at the start's time (`id: vacation_start`), one at the end's time (`vacation_end`), and
+  `homeassistant start` (`ha_start`);
+- branch 1 (`vacation_start` or `ha_start`, and now is inside the dates): `automation.turn_on` on the label;
+- branch 2 (`vacation_end` or `ha_start`, and now is at or after the end): wait for the mode's schedules to end
+  (6 h), turn the label off with `stop_actions: false`, then **disable itself**, so after the trip the mode is back
+  to *Manual* and its switches unlock.
+- The card reads the dates back from `variables` and rewrites the automation only while it is still exactly that
+  shape (`sameConfig`). Changing the dates rewrites it under the same id.
+- Choosing *Automatic* for vacation opens a from/to date panel; *Save* writes the automation, enables it, and puts the
+  members where the dates say (off before the trip, on during it).
+
+### The cards
+
+- New card type **`custom:schedule-helper-modes-card`** ("Modes"), offered in the card picker. Default `modes`:
+  vacation, plus Shabbat and chag in a home that has their labels or a Jewish calendar. The Jewish calendar block is
+  drawn only above the Shabbat/chag sections.
+- `custom:schedule-helper-shabbat-card` (and `beit-shabbat-card`) keep working exactly as before: same class, default
+  modes Shabbat and chag, same title. No longer offered in the picker.
+- Schedules card: the mode choice in the editor is *Regular / Vacation*, plus Shabbat and chag where the home uses
+  them (`show_modes` unset). `show_modes: true` shows all three, `false` none. `mode: vacation` filters.
+- The Schedule Helper dashboard the card creates uses the Modes card.
+
+### Docs
+
+- README: modes are a general feature led by vacation; Shabbat and chag are an optional section after it.
+- Contract: a new §3b for vacation (label names, the automation shape); the Beit app is not aligned yet.
+
+### Tests
+
+- Unit: `modeKey`, `modeLabel`, the vacation automation (build, parse back, refuse a hand-edited one), the vacation
+  phase (before / during / after), `ensureLabel` for vacation in both languages.
+- Ops on the fake hass: enable automatic vacation, change the dates, `alignWithMode` into an empty vacation mode.
+- Browser: the Modes card shows vacation first; automatic vacation through the date panel; the shabbat card type
+  unchanged.

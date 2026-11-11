@@ -47,9 +47,14 @@ const CHECKS = [
     must(S().querySelectorAll('.row[data-id]').length === 6, 'the YAML schedule is not editable');
     must([...S().querySelectorAll('.row')].some((r) => !r.dataset.id && r.textContent.includes('YAML')), 'the YAML schedule says so');
     must(!S().querySelector('.body .ic') && !B().querySelector('.body .ic'), 'no icons in the cards');
-    must(B().querySelectorAll('.mode').length === 2, 'two modes');
-    must(B().querySelectorAll('[data-automode][value=auto]').length === 2, 'automatic Shabbat and chag');
+    must(B().querySelectorAll('.mode').length === 3, 'three modes');
+    must([...B().querySelectorAll('.mode')].map((m) => m.classList[1]).join() === 'vacation,shabbat,chag', 'vacation first');
+    must(B().querySelectorAll('[data-automode][value=auto]').length === 3, 'automatic vacation, Shabbat and chag');
     must(B().querySelector('.cal-date').textContent.includes('טבת'), 'calendar');
+    // The calendar sits above Shabbat, below vacation.
+    const order = [...B().querySelector('.scroll').children].map((el) => el.classList.contains('cal') ? 'cal' : el.classList[1]).filter(Boolean);
+    must(order.join() === 'vacation,cal,shabbat,chag', 'order: ' + order.join());
+    must(B().querySelector('h2').textContent === 'מצבים', 'title');
   `],
   ['the card types from before 2.0 still render', '', `
     for (const tag of ['beit-schedule-card', 'beit-shabbat-card']) {
@@ -511,7 +516,7 @@ const CHECKS = [
       }
     };
     await watch('[data-auto]');
-    await watch('[data-master]');
+    await watch('.mode.shabbat [data-master]');
     fake.failNext('automation.turn_on', 'Nope');
     fake.failNext('automation.turn_off', 'Nope');
     const sw = B().querySelector('[data-auto]');
@@ -519,6 +524,145 @@ const CHECKS = [
     click(sw, 'member');
     await sleep(200);
     must(B().querySelector('[data-auto]').checked === was, 'a failed call leaves the switch where HA has it');
+  `],
+  // ---- vacation (2.5) ----
+  ['automatic vacation: dates in a panel, then one automation; the switches lock; manual disables it', 'lang=en', `
+    // Two automations in vacation mode first, so it has members to switch.
+    await fake.callWS({ type: 'config/label_registry/create', name: 'Vacation', icon: 'mdi:airplane', color: 'teal' });
+    const vac = fake._labels.find((l) => l.name === 'Vacation').label_id;
+    for (const id of ['automation.beit_water_heater_weekdays', 'schedule.water_heater_weekdays']) {
+      await fake.callWS({ type: 'config/entity_registry/update', entity_id: id, labels: [...(fake.entities[id]?.labels || []), vac] });
+    }
+    await sleep(600);
+    const sec = () => B().querySelector('.mode.vacation');
+    must(sec().querySelector('[data-auto="automation.beit_water_heater_weekdays"]'), 'member listed');
+    must(!sec().querySelector('.cal'), 'no Jewish calendar inside vacation');
+    toggle(sec().querySelector('[data-automode=vacation][value=auto]'), true, 'automatic');
+    await sleep(200);
+    must(B().querySelector('.vacation-panel'), 'the dates panel opens');
+    must(sec().querySelector('[data-automode=vacation][value=auto]').checked, 'Automatic shown while choosing dates');
+    must(!posts().length, 'nothing written before Save');
+    // The end before the start: refused, nothing written.
+    type(B().querySelector('#vac-from'), '2030-07-08T08:00', 'from');
+    type(B().querySelector('#vac-to'), '2030-07-01T18:00', 'to');
+    click(B().querySelector('[data-act=startSave]'), 'save');
+    await sleep(300);
+    must(/after the start/.test(B().querySelector('.vacation-panel .error')?.textContent || ''), 'order error');
+    must(!posts().length, 'still nothing written');
+    type(B().querySelector('#vac-from'), '2030-07-01T08:00', 'from');
+    type(B().querySelector('#vac-to'), '2030-07-08T18:30', 'to');
+    click(B().querySelector('[data-act=startSave]'), 'save');
+    await sleep(1200);
+    const p = posts().find((c) => c.body.alias === 'Beit · Automatic vacation');
+    must(p, 'created');
+    must(p.body.variables.vacation_from === '2030-07-01 08:00' && p.body.variables.vacation_to === '2030-07-08 18:30', 'dates ' + JSON.stringify(p.body.variables));
+    must(posts().filter((c) => c.body.alias === 'Beit · Automatic vacation').length === 1, 'one automation');
+    must(!B().querySelector('.vacation-panel'), 'panel closed');
+    must(/Vacation: .*1 Jul.* – .*8 Jul/.test(sec().textContent), 'dates shown: ' + sec().querySelector('.auto').textContent.replace(/\s+/g, ' '));
+    must(/Comes on/.test(sec().textContent), 'next start');
+    must(fake.states['automation.beit_water_heater_weekdays'].state === 'off', 'before the trip its members are off');
+    must(sec().querySelector('[data-master]').disabled && sec().querySelector('[data-auto]').disabled, 'switches locked');
+    // Change the dates: the same automation is rewritten.
+    click(sec().querySelector('[data-act=startEdit]'), 'change');
+    await sleep(200);
+    must(B().querySelector('#vac-from').value === '2030-07-01T08:00', 'panel opens with the current dates');
+    type(B().querySelector('#vac-to'), '2030-07-10T12:00', 'to');
+    click(B().querySelector('[data-act=startSave]'), 'save');
+    await sleep(1000);
+    const again = posts().filter((c) => c.body.alias === 'Beit · Automatic vacation');
+    must(again.length === 2 && again[1].body.id === again[0].body.id && again[1].body.variables.vacation_to === '2030-07-10 12:00', 'rewritten in place');
+    // Manual: the automation is disabled, never deleted.
+    toggle(sec().querySelector('[data-automode=vacation][value=manual]'), true, 'manual');
+    await sleep(800);
+    const autoId = Object.values(fake.states).find((e) => e.attributes?.friendly_name === 'Beit · Automatic vacation').entity_id;
+    must(fake.states[autoId].state === 'off', 'disabled');
+    must(!fake.calls.some((c) => c.method === 'DELETE'), 'not deleted');
+    must(!sec().querySelector('[data-master]').disabled, 'unlocked');
+  `],
+  ['cancelling the vacation panel goes back to Manual and writes nothing', 'lang=en', `
+    const sec = () => B().querySelector('.mode.vacation');
+    toggle(sec().querySelector('[data-automode=vacation][value=auto]'), true, 'automatic');
+    await sleep(200);
+    click(B().querySelector('.vacation-panel [data-act=startCancel]'), 'cancel');
+    await sleep(200);
+    must(!B().querySelector('.vacation-panel'), 'closed');
+    must(sec().querySelector('[data-automode=vacation][value=manual]').checked, 'manual again');
+    must(!posts().length, 'nothing written');
+  `],
+  ['a non-admin cannot choose automatic vacation (it needs dates written)', 'admin=0', `
+    must(B().querySelector('[data-automode=vacation][value=auto]').disabled, 'disabled');
+  `],
+  ['a new schedule in vacation mode creates the label in the user language', 'schedules=' + encodeURIComponent('{}'), `
+    click(S().querySelector('[data-act=new]'), 'new');
+    await sleep(200);
+    const seg = [...D().querySelectorAll('[data-act=mode]')].map((b) => b.textContent.trim());
+    must(seg.join() === 'רגיל,חופשה,שבת,חג', 'choices ' + seg.join());
+    click(D().querySelector('[data-act=pick]'), 'pick');
+    await sleep(500);
+    click(D().querySelector('[data-id="media_player.kitchen_speaker"]'), 'a speaker');
+    await sleep(100);
+    click(D().querySelector('[data-act=mode][data-mode=vacation]'), 'vacation');
+    must(/מכרטיס "מצבים"/.test(D().textContent), 'hint names the Modes card');
+    await addRange(1, '07:00', '08:00');
+    click(D().querySelector('[data-act=save]'), 'save');
+    await sleep(1500);
+    must(!D(), 'closed');
+    const label = fake._labels.find((l) => l.name === 'חופשה');
+    must(label && label.icon === 'mdi:airplane', 'label created');
+    const sched = Object.keys(fake.states).find((id) => id.startsWith('schedule.') && fake.entities[id]?.labels?.includes(label.label_id));
+    must(sched, 'schedule in vacation');
+    await sleep(500);
+    must([...S().querySelectorAll('.chip.vacation')].length === 1, 'vacation chip on the row');
+    must(B().querySelector('.mode.vacation .sched'), 'listed under vacation in the Modes card');
+  `],
+  ['a home without Shabbat or chag: vacation only, no calendar', '', `
+    const { FakeHass } = await import('../tests/fake-hass.mjs');
+    const names = ['states', 'schedule_list', 'automation_configs', 'label_registry', 'entity_registry_display', 'area_registry', 'device_registry', 'yaml_schedules'];
+    const fx = Object.fromEntries(await Promise.all(names.map(async (n) => [n, await (await fetch('../tests/fixtures/' + n + '.json')).json()])));
+    const plain = new FakeHass({ ...fx, label_registry: [], states: fx.states.filter((s) => !/jewish_calendar|hebcal/.test(s.entity_id)) }, { language: 'en' });
+    const modes = document.createElement('schedule-helper-modes-card');
+    modes.setConfig({});
+    document.body.appendChild(modes);
+    modes.hass = plain.snapshot();
+    const sched = document.createElement('schedule-helper-card');
+    sched.setConfig({});
+    document.body.appendChild(sched);
+    sched.hass = plain.snapshot();
+    await sleep(700);
+    const kinds = [...modes.shadowRoot.querySelectorAll('.mode')].map((m) => m.classList[1]);
+    must(kinds.join() === 'vacation', 'modes: ' + kinds.join());
+    must(!modes.shadowRoot.querySelector('.cal'), 'no calendar');
+    must(modes.shadowRoot.querySelector('h2').textContent === 'Modes', 'title');
+    sched.shadowRoot.querySelector('.row[data-id]').click();
+    await sleep(500);
+    const seg = [...sched.shadowRoot.querySelectorAll('dialog [data-act=mode]')].map((b) => b.textContent.trim());
+    must(seg.join() === 'Regular,Vacation', 'choices ' + seg.join());
+    sched.shadowRoot.querySelector('dialog').close();
+    modes.remove();
+    sched.remove();
+  `],
+  ['the Shabbat card type is unchanged: Shabbat and chag, its own title', '', `
+    const el = document.createElement('schedule-helper-shabbat-card');
+    el.setConfig({});
+    document.body.appendChild(el);
+    el.hass = fake.snapshot();
+    await sleep(500);
+    must([...el.shadowRoot.querySelectorAll('.mode')].map((m) => m.classList[1]).join() === 'shabbat,chag', 'modes');
+    must(el.shadowRoot.querySelector('h2').textContent === 'שבת וחג', 'title');
+    must(el.shadowRoot.querySelector('.cal'), 'calendar');
+    must(window.customCards.some((c) => c.type === 'schedule-helper-modes-card'), 'Modes card offered');
+    must(!window.customCards.some((c) => c.type === 'schedule-helper-shabbat-card'), 'Shabbat card no longer offered');
+    el.remove();
+  `],
+  ['the Modes card editor lists vacation first; unticking writes the list', 'editors=1', `
+    const ed = document.querySelectorAll('ha-card > *')[1];
+    await sleep(300);
+    const boxes = [...ed.shadowRoot.querySelectorAll('[data-mode]')];
+    must(boxes.map((b) => b.dataset.mode).join() === 'vacation,שבת,חג', 'order');
+    must(boxes.every((b) => b.checked), 'all on in this home');
+    toggle(boxes[2], false, 'chag off');
+    await sleep(300);
+    must([...B().querySelectorAll('.mode')].map((m) => m.classList[1]).join() === 'vacation,shabbat', 'card follows');
   `],
 ];
 

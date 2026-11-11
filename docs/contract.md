@@ -76,10 +76,14 @@ Written with `POST /api/config/automation/config/<id>`. From a card this is `has
   2. `schedule/delete`.
   3. Report the related automations that were kept.
 
-## 3. Shabbat / chag modes
+## 3. Modes: vacation, Shabbat, chag
 
-- **A mode is an HA label.** Labels are identified by **name**, `שבת` and `חג`, never by id. HA slugs Hebrew names (for example `shbt`), and the slug is not guaranteed.
-- **Creating a missing label:** `config/label_registry/create {name, icon: "mdi:candle" | "mdi:star-david", color: "amber" | "indigo"}`.
+Three modes share everything in this section. Vacation is the general one (§3b covers what is its own); Shabbat and
+chag are the ones a Jewish calendar times.
+
+- **A mode is an HA label.** Labels are identified by **name**, never by id: vacation by `Vacation` **or** `חופשה`
+  (either is recognised; the card creates the one in the user's language), Shabbat by `שבת`, chag by `חג`. HA slugs Hebrew names (for example `shbt`), and the slug is not guaranteed.
+- **Creating a missing label:** `config/label_registry/create {name, icon: "mdi:airplane" | "mdi:candle" | "mdi:star-david", color: "teal" | "amber" | "indigo"}`.
 - **Membership:** an automation, and the schedules it follows, carry the label. Write it with `config/entity_registry/update {entity_id, labels: [...]}`. That call **replaces** the list, so merge with the entity's existing labels, read just before from `config/entity_registry/get` → `labels` (`list_for_display` leaves out disabled entities).
 - **Changing a schedule's mode from the schedule editor** moves the schedule and only the automations carrying the
   marker that drive it; an automation the user wrote may only mention the schedule. Those automations then follow the
@@ -141,10 +145,52 @@ Written with `POST /api/config/automation/config/<id>`. From a card this is `has
 
 On request (a button in either card's visual editor, admins only) the card creates one new storage dashboard:
 `lovelace/dashboards/create {url_path: "schedule-helper", title: "Schedule Helper", icon: "mdi:calendar-clock", show_in_sidebar: true,
-require_admin: false, mode: "storage"}`, then `lovelace/config/save` with one view holding both cards. If a dashboard with
+require_admin: false, mode: "storage"}`, then `lovelace/config/save` with one view holding `custom:schedule-helper-card` and `custom:schedule-helper-modes-card` (2.5; before, the Shabbat card). If a dashboard with
 that `url_path` exists, nothing is written. If the save fails, the new dashboard is deleted again
 (`lovelace/dashboards/delete {dashboard_id}`). No existing dashboard is ever changed. A dashboard at `beit-schedules` (the address before 2.0) counts as
 existing too.
+
+## 3b. Vacation
+
+*(Card 2.5. The Beit app does not know the vacation mode yet: it sees its label as an ordinary label and the automatic
+automation as an ordinary automation carrying the marker. To be aligned.)*
+
+- Membership, the switch, switching off mid-range and moving a schedule between modes are §3 unchanged.
+- **Joining an empty vacation mode:** off, unless an automatic vacation that is switched on says the trip is on now.
+- **Automatic vacation.** One automation, alias `Beit · Automatic vacation`, carrying the marker:
+
+  ```json
+  {
+    "id": "<ms timestamp>",
+    "alias": "Beit · Automatic vacation",
+    "description": "נוצר באפליקציית Beit — …",
+    "variables": {"vacation_from": "YYYY-MM-DD HH:MM", "vacation_to": "YYYY-MM-DD HH:MM"},
+    "triggers": [
+      {"trigger": "time", "at": "<from's HH:MM>:00", "id": "vacation_start"},
+      {"trigger": "time", "at": "<to's HH:MM>:00", "id": "vacation_end"},
+      {"trigger": "homeassistant", "event": "start", "id": "ha_start"}
+    ],
+    "conditions": [],
+    "actions": [{"choose": [
+      {"conditions": [{"condition": "trigger", "id": ["vacation_start", "ha_start"]},
+                      {"condition": "template", "value_template": "{{ vacation_from <= now().strftime('%Y-%m-%d %H:%M') and now().strftime('%Y-%m-%d %H:%M') < vacation_to }}"}],
+       "sequence": [{"action": "automation.turn_on", "target": {"label_id": "<vacation label>"}}]},
+      {"conditions": [{"condition": "trigger", "id": ["vacation_end", "ha_start"]},
+                      {"condition": "template", "value_template": "{{ now().strftime('%Y-%m-%d %H:%M') >= vacation_to }}"}],
+       "sequence": ["<the same wait for the label's schedules as Shabbat (6 h)>",
+                    {"action": "automation.turn_off", "target": {"label_id": "<vacation label>"}, "data": {"stop_actions": false}},
+                    {"action": "automation.turn_off", "target": {"entity_id": "{{ this.entity_id }}"}, "data": {"stop_actions": false}}]}
+    ]}],
+    "mode": "single"
+  }
+  ```
+
+  - Dates are HA's local time, compared as text.
+  - After the end it disables itself, so the mode is manual again and its switches unlock.
+  - The dates are read from `variables`. The card rewrites it (same id) only while it is exactly this shape; one edited
+    by hand is only switched on and off.
+  - Creating it, or giving it new dates, also switches the members to match the dates: off before the trip, on during it.
+  - It is never a member of a mode, and it is never deleted (switching to manual disables it).
 
 ## 4. Calendar sources
 

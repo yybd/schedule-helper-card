@@ -4,7 +4,8 @@
   <b>A weekly schedule card for any device</b>, for any home, on your Home Assistant dashboard.<br>
   Built entirely on Home Assistant's own <b>schedule helper</b> and ordinary automations. No custom integration, no extra
   engine running on your server.<br>
-  <i>Optional extra:</i> Shabbat and Jewish holiday (chag) modes, for homes that keep them.
+  <b>Modes</b> switch groups of schedules together: <b>vacation</b>, by the dates you pick, and, for homes that keep
+  them, Shabbat and the Jewish holidays (chag).
 </p>
 
 <p align="center">
@@ -14,7 +15,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/yybd/schedule-helper-card" alt="License"></a>
 </p>
 
-<p align="center"><img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/card.png" alt="The schedules card and the Shabbat and Jewish holidays card" width="760"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/yybd/schedule-helper-card/main/docs/card.png" alt="The Schedules card and the Modes card" width="760"></p>
 
 ---
 
@@ -27,7 +28,9 @@
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Configuration](#configuration)
-- [Shabbat and Jewish holiday (chag) modes](#shabbat-and-jewish-holiday-chag-modes)
+- [Modes](#modes)
+  - [Vacation](#vacation)
+  - [Shabbat and Jewish holiday (chag) modes](#shabbat-and-jewish-holiday-chag-modes)
 - [How it works](#how-it-works)
 - [Uninstalling](#uninstalling)
 - [Permissions](#permissions)
@@ -37,9 +40,11 @@
 
 ## Two cards
 
-> **You don't need to keep Shabbat to use this.** The Schedules card is a general-purpose weekly scheduler for any
-> device in any home. Shabbat and the Jewish holidays are an optional extra: a second card you can simply not add, and
-> the Schedules card shows them only in a home that already has a `שבת` or `חג` label (or with `show_modes: true`).
+> **A mode** is a group of schedules (and the automations that drive them) that runs only for a stretch of time and is
+> switched on and off together. **Vacation** is the mode every home has: the schedules you want only while you are
+> away, from the day you leave to the day you come back. **Shabbat** and **chag** are the same idea for homes that keep
+> them, with the Jewish calendar deciding the stretch. You don't need to keep Shabbat to use any of this: Shabbat and
+> chag appear only in a home that uses them (a `שבת` or `חג` label, or a Jewish calendar integration).
 >
 > *Chag* is Hebrew for a **Jewish holiday**: the festival days kept like Shabbat (Yom Tov), such as Rosh Hashanah,
 > Yom Kippur, Sukkot, Pesach and Shavuot.
@@ -48,8 +53,11 @@ The package contains **two separate cards**. Add one or both; each works on its 
 
 | | Card | What it is for |
 |:-:|---|---|
-| 🗓️ | **Schedules**<br>`custom:schedule-helper-card`<br>*the main card, for every home* | **Setting up schedules.** Create and edit a weekly schedule for any device (air conditioner, heating, lights, water heater, plugs, blinds): the hours for each day, and what the device does. Shabbat and chag appear only once your home uses them (a `שבת` or `חג` label), or with `show_modes: true`. |
-| 🕯️ | **Shabbat & Jewish holidays**<br>`custom:schedule-helper-shabbat-card`<br>*optional* | **For homes that keep Shabbat and the Jewish holidays (chag).** Switch each mode on or off, choose which automations belong to it, set automatic Shabbat and chag, and see candle lighting, havdalah and the parasha. |
+| 🗓️ | **Schedules**<br>`custom:schedule-helper-card`<br>*the main card* | **Setting up schedules.** Create and edit a weekly schedule for any device (air conditioner, heating, lights, water heater, plugs, blinds, speakers): the hours for each day, what the device does, and the mode it belongs to (regular, vacation, and Shabbat or chag where your home uses them). |
+| ✈️ | **Modes**<br>`custom:schedule-helper-modes-card` | **Switching groups of schedules.** Vacation first: switch it on by hand, or give it the dates of your trip. Then, in homes that keep them, Shabbat and chag, with automatic Shabbat and chag and the candle lighting, havdalah and parasha. |
+
+The Shabbat card of earlier versions, `custom:schedule-helper-shabbat-card`, still works: it is the Modes card showing
+Shabbat and chag only.
 
 ## Features
 
@@ -61,13 +69,16 @@ The package contains **two separate cards**. Add one or both; each works on its 
 - **Edit every schedule in the house.** A clear week view for each UI-managed schedule helper. You can add ranges, copy a
   day to the other weekdays or to the whole week, and set ranges that run until midnight. For a schedule the card
   created, you can also change the device and what it does; renaming a schedule renames its automation too.
-- **Put a schedule in a mode.** Mark it as a Shabbat or chag schedule, so the Shabbat & chag card switches it with the
-  rest of the mode. (Shown once your home uses the modes; see `show_modes`.)
+- **Put a schedule in a mode.** Mark it as a vacation schedule (or a Shabbat or chag one, where your home uses them),
+  so the Modes card switches it with the rest of the mode.
 
-### 🕯️ Shabbat & Jewish holidays (chag) card (optional)
+### ✈️ Modes card
 
-- **Shabbat and chag modes.** A single switch turns on or off every automation that belongs to a mode, and the card
-  shows whether the mode is fully on, partly on or off.
+- **Vacation mode.** A single switch turns on or off every automation that belongs to it, and the card shows whether
+  the mode is fully on, partly on or off.
+- **Automatic vacation.** Pick the dates and times you leave and come back. The mode switches on then, and off when
+  you are back, once every vacation schedule has finished; afterwards it is back to manual by itself.
+- **Shabbat and chag modes** (optional, for homes that keep them): the same switches, one per mode.
 - **Automatic Shabbat and chag.** Switches the mode on before its schedules begin (at a time you choose, or some hours
   before candle lighting) and off after it ends, only once every schedule of the mode has finished, so no device is
   left running.
@@ -105,6 +116,7 @@ own objects rather than bringing its own scheduling engine.**
 | Schedule and device configured together | ✅ | ❌ automation written by hand | ✅ | ✅ | ❌ |
 | Device driven by a standard, editable HA automation | ✅ | ✅ (your own) | ❌ internal engine | ❌ internal engine | ✅ (your own) |
 | Keeps working if the card is removed | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Vacation mode, by dates | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Shabbat / Jewish holiday modes | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Restart-safe automations | ✅ | Depends on you | ✅ | ✅ | Depends on you |
 | Deletes only what it created | ✅ | — | — | — | — |
@@ -116,8 +128,9 @@ own objects rather than bringing its own scheduling engine.**
    after a Home Assistant upgrade.
 2. **No lock-in.** Everything the card creates is a regular schedule helper and a regular automation. You can see and
    edit them under *Settings → Automations & Scenes* and *Settings → Helpers*, and they keep working without the card.
-3. **Built for Shabbat and chag.** Modes are Home Assistant labels, so a mode's automations are visible and filterable
-   everywhere in Home Assistant. Automatic Shabbat mode is timed around real schedules, not only candle lighting.
+3. **Modes, from vacation to Shabbat.** Modes are Home Assistant labels, so a mode's automations are visible and
+   filterable everywhere in Home Assistant. A mode switches off only once its schedules have finished, so no device is
+   cut off mid-range; automatic Shabbat is timed around real schedules, not only candle lighting.
 4. **Careful by design.**
    - Automations ignore the brief "unavailable" state after a restart, so devices don't switch on or off on their own.
    - Deleting a schedule removes only the automation the card created. Automations you wrote yourself are left in
@@ -127,21 +140,23 @@ own objects rather than bringing its own scheduling engine.**
 
 **Where other tools go further.** The Scheduler card supports arbitrary service calls, conditions and sun-based times.
 The Weekly Schedule Card and the built-in editor let you draw ranges by dragging on a grid. Schedule Helper Card focuses
-on device schedules and Shabbat/chag modes.
+on device schedules and modes.
 
 ## Requirements
 
 - Home Assistant **2025.1** or newer.
 - An **administrator** account to create or edit schedules. Other users see a read-only view (see
   [Permissions](#permissions)).
-- For the Shabbat card's times and for **automatic Shabbat**: a Jewish calendar, either the
+- Vacation, manual or automatic, needs nothing more.
+- For Shabbat and chag times and for **automatic Shabbat**: a Jewish calendar, either the
   [Jewish Calendar](https://www.home-assistant.io/integrations/jewish_calendar/) integration (recommended, see
   [Setting up Jewish Calendar](#setting-up-jewish-calendar)) or Hebcal. **Automatic chag** needs Jewish Calendar.
   Without a calendar, you can still switch the modes by hand, and the Schedules card needs none at all.
 
 What the card adds to your Home Assistant, only when you ask it to: a **schedule helper** and an **automation** for each
-schedule you create, the labels `שבת` and `חג` once you use a mode, an automation for automatic Shabbat or chag if you
-switch it on, and a *Schedule Helper* dashboard if you create one. All of them are ordinary Home Assistant objects (see
+schedule you create, a label per mode once you use it (`Vacation` or `חופשה`, in your language; `שבת`, `חג`), an
+automation for automatic vacation, Shabbat or chag if you switch it on, and a *Schedule Helper* dashboard if you
+create one. All of them are ordinary Home Assistant objects (see
 [How it works](#how-it-works) and [Uninstalling](#uninstalling)).
 
 ## Installation
@@ -185,7 +200,7 @@ After installing, reload the browser. Then either:
 
 - **One click: a Schedule Helper dashboard.** Open any dashboard → ⋮ → *Edit dashboard* → *Add card* → **Schedule Helper
   Card**. At the top of the card's editor, **Create the Schedule Helper dashboard** adds a new dashboard named *Schedule Helper*
-  to the sidebar, with both cards. Nothing else is changed; if it already exists, the button offers to open it.
+  to the sidebar, with the Schedules and Modes cards. Nothing else is changed; if it already exists, the button offers to open it.
   You can close the Add card dialog without adding the card.
 - **By hand.** *Settings → Dashboards → Add dashboard → New dashboard from scratch*, name it, open it, then ⋮ → *Edit
   dashboard* → ⋮ → *Raw configuration editor*, and paste:
@@ -195,8 +210,7 @@ After installing, reload the browser. Then either:
     - title: Schedule Helper
       cards:
         - type: custom:schedule-helper-card
-          show_modes: true
-        - type: custom:schedule-helper-shabbat-card
+        - type: custom:schedule-helper-modes-card
   ```
 
   Or add the cards to any existing dashboard from *Add card*: search for **Schedule Helper**.
@@ -210,7 +224,7 @@ old address). Dashboards that use `custom:beit-schedule-card` or `custom:beit-sh
    The file is now `schedule-helper-card.js`; HACS registers the new resource.
 2. Check *Settings → Dashboards → ⋮ → Resources*: if `/hacsfiles/beit-schedule-card/beit-schedule-card.js` is still
    listed, delete it (HACS may leave it behind, pointing at a file that is gone).
-3. Optionally, change your cards' types to `custom:schedule-helper-card` and `custom:schedule-helper-shabbat-card`.
+3. Optionally, change your cards' types to `custom:schedule-helper-card` and `custom:schedule-helper-modes-card`.
 
 ## Configuration
 
@@ -223,8 +237,8 @@ and configured in the visual editor.
 type: custom:schedule-helper-card
 title: My schedules       # optional
 height: 500px              # optional: fixed height, the list scrolls
-show_modes: true           # optional: show Shabbat and chag (default: only if the home has their labels)
-mode: שבת                  # optional: show only schedules in this mode (שבת / חג)
+show_modes: true           # optional: offer every mode (default: vacation, plus Shabbat and chag where the home uses them)
+mode: vacation             # optional: show only schedules in this mode (vacation / שבת / חג)
 entities:                  # optional: show only these schedules
   - schedule.living_room_ac
 ```
@@ -238,26 +252,31 @@ entities:                  # optional: show only these schedules
 | `show_add` | boolean | `true` | Show the **New schedule** button. |
 | `height` | string | up to `700px` | A fixed height, such as `500px` or `60vh`. The title stays put and the list scrolls inside the card. Unset, the card grows with its content up to 700px; `auto` removes the limit. |
 | `device_domains` | list | all | Device types offered when choosing a device, e.g. `[climate, light, water_heater]`. |
-| `show_modes` | boolean | automatic | Show Shabbat and chag (Jewish holidays): the mode chips and the mode choice in the editor. Unset, they are shown only when your home already has a `שבת` or `חג` label (the Shabbat card creates them the first time you use a mode). `true` or `false` decides it. |
+| `show_modes` | boolean | automatic | The mode chips and the mode choice in the editor. Unset: vacation, plus Shabbat and chag (Jewish holidays) in a home that has a `שבת` or `חג` label or a Jewish calendar integration. `true` offers every mode, `false` none. |
 
-### 🕯️ Shabbat & Jewish holidays (chag) card (optional)
+### ✈️ Modes card
 
 ```yaml
-type: custom:schedule-helper-shabbat-card
-modes: [שבת, חג]           # optional
+type: custom:schedule-helper-modes-card
+modes: [vacation, שבת, חג] # optional
 show_calendar: true        # optional
 ```
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `title` | string | *Shabbat & chag (Jewish holidays)* | Card title. The default follows the user's language (`שבת וחג` in Hebrew). |
-| `modes` | list | `[שבת, חג]` | Which modes to show. |
+| `title` | string | *Modes* | Card title. The default follows the user's language (`מצבים` in Hebrew). |
+| `modes` | list | automatic | Which modes to show, in this order: `vacation`, `שבת` (or `shabbat`), `חג` (or `chag`). Unset: vacation, plus Shabbat and chag in a home that uses them. |
 | `height` | string | up to `700px` | A fixed height, such as `500px` or `60vh`. The title stays put and the rest scrolls inside the card. Unset, the card grows with its content up to 700px; `auto` removes the limit. |
-| `show_calendar` | boolean | `true` | Show candle lighting, havdalah, the parasha and the holiday. |
+| `show_calendar` | boolean | `true` | Show candle lighting, havdalah, the parasha and the holiday, above the Shabbat section. |
 
-## Shabbat and Jewish holiday (chag) modes
+`custom:schedule-helper-shabbat-card` takes the same options; its defaults are `modes: [שבת, חג]` and the title
+*Shabbat & chag (Jewish holidays)*.
 
-A mode is a Home Assistant **label**, named `שבת` or `חג`.
+## Modes
+
+A mode is a Home Assistant **label**: `Vacation` (or `חופשה`; the card creates it in your language and recognises
+either), `שבת` or `חג`. Everything below works the same for every mode; only what switches a mode automatically
+differs.
 
 - **Membership.** An automation belongs to a mode when it carries the label. The schedules it follows carry the label
   too, so they appear under the mode.
@@ -272,6 +291,28 @@ A mode is a Home Assistant **label**, named `שבת` or `חג`.
   *Manual* to switch it yourself (any user can, once the automatic mode exists).
   - Choosing *Automatic* puts the switches where the calendar says: off during the week, on during the mode.
   - A mode left on while *Manual* does not switch off by itself; the card says so.
+### Vacation
+
+The schedules you want only while you are away: lights in the evening, the water heater on the morning you come
+back, the plants' valve. Put them in vacation mode (the mode choice when you edit a schedule), and they run only while
+the mode is on. Every other schedule goes on as usual.
+
+- **By hand** (*Manual*): switch vacation mode on when you leave and off when you are back.
+- **Automatic vacation.** Choose *Automatic* and pick the date and time you leave and the date and time you come back.
+  The card creates one automation (`Beit · Automatic vacation`) that:
+  1. switches vacation mode on when you leave;
+  2. switches it off when you are back, once every vacation schedule has finished (at most 6 hours later);
+  3. then switches itself off, so the mode is back to *Manual*.
+
+  The card switches the mode's automations off at once until the trip starts. If Home Assistant restarts during the
+  trip, or was down when it ended, it catches up when it starts. *Change* next to the dates moves them; choosing
+  *Manual* disables the automation (it is never deleted). Times are Home Assistant's local time.
+
+### Shabbat and Jewish holiday (chag) modes
+
+For homes that keep them. They appear in the Modes card, and as a choice in the schedule editor, once your home has a
+`שבת` or `חג` label or a Jewish calendar integration.
+
 - **Automatic Shabbat** (optional). Creates one automation that:
   1. turns the Shabbat mode on every **Friday at 12:00**, before typical Friday-afternoon schedules begin. You can pick
      another time, or a number of hours before candle lighting (with Jewish Calendar);
@@ -302,7 +343,7 @@ Automatic chag works the same way, from erev chag to the end of the chag.
 ### Setting up Jewish Calendar
 
 Jewish Calendar is part of Home Assistant, so there is nothing to download, but it has to be added once. The card
-cannot add it for you; when it is missing, the Shabbat card shows a link to add it (for administrators).
+cannot add it for you; when it is missing, the Modes card shows a link to add it (for administrators).
 
 [![Open your Home Assistant instance and start setting up Jewish Calendar.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=jewish_calendar)
 
@@ -334,8 +375,8 @@ The full data model is documented in [docs/contract.md](docs/contract.md).
 ## Uninstalling
 
 Remove the card in HACS (or delete the file and its resource, for a manual installation). Everything it created stays
-in Home Assistant and keeps working: the schedule helpers, the `Beit · …` automations, the automatic Shabbat and chag
-automations, the labels `שבת` and `חג`, and the *Schedule Helper* dashboard if you created one. To remove them as
+in Home Assistant and keeps working: the schedule helpers, the `Beit · …` automations, the automatic vacation, Shabbat
+and chag automations, the mode labels (`Vacation` or `חופשה`, `שבת`, `חג`), and the *Schedule Helper* dashboard if you created one. To remove them as
 well, delete them under *Settings → Devices & services → Helpers*, *Settings → Automations & scenes*, *Settings →
 Areas, labels & zones → Labels* and *Settings → Dashboards*.
 
